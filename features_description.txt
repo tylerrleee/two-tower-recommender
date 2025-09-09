@@ -1,0 +1,46 @@
+    ('name', 'string'),  # Identifier, not a model feature
+    ('pronouns', 'string'),  # Identifier, optional metadata
+    ('ufl_email', 'string'),  # Identifier, not a model feature
+    ('phone', 'string'),  # Identifier, not a model feature
+    ('socials', 'string'),  # Identifier, optional metadata
+    
+    ('year', 'categorical_onehot'),  # One-hot encode: is_freshman, is_sophomore, etc.
+    ('major', 'unstructured_text_tfidf'),  # Academic interests, TF-IDF
+    ('other_orgs', 'unstructured_text_tfidf'),  # Keywords for orgs/skills, TF-IDF
+    
+    ('role_', 'binary'),  # 0 = Big, 1 = Little
+    
+    ('preferred_littles', 'categorical_int'),  # Mentor preference, integer (1,2,3,4,5)
+    ('preferred_bigs', 'categorical_int'),  # Mentee preference, integer (1,2,3,4,5)
+    ('pairing_requests_', 'string_optional'),  # Optional metadata
+    
+    ('on_off_campus_', 'binary'),  # 0 = On, 1 = Off
+    ('has_car_', 'binary'),  # 0 = No, 1 = Yes
+    
+    ('ideal_big_little', 'embedding_sbert'),  # Semantic preference, S-BERT embeddings
+    ('looking_for_ace', 'embedding_sbert'),  # Semantic motivation, S-BERT embeddings
+    
+    ('free_time', 'unstructured_text_tfidf'),  # Leisure activities, TF-IDF
+    ('hobbies', 'unstructured_text_tfidf'),  # Activities & shared interests, TF-IDF
+    ('favorite_artists_songs', 'unstructured_text_tfidf'),  # Cultural preferences, TF-IDF
+    
+    ('icks', 'embedding_sbert'),  # Anti-preferences, semantic embedding
+    ('talk_for_hours_about', 'embedding_sbert'),  # Passion topics, semantic embedding
+    ('self_description', 'embedding_sbert'),  # Personality summary, semantic embedding
+    
+    ('best_joke', 'exclude'),  # Low predictive value, exclude from model features
+    
+    ('favorite_food', 'unstructured_text_tfidf'),  # Shared social interests, TF-IDF
+    
+    ('earlybird_nightowl_', 'binary'),  # 0 = Early, 1 = Night
+    
+    ('extroversion_', 'numerical_normalized'),  # Scale 1-5 → normalized [0,1]
+    ('good_advice_', 'numerical_normalized'),  # Scale 1-5 → normalized [0,1]
+    ('plans_style_', 'numerical_normalized'),  # Scale 1-5 → normalized [0,1]
+    ('study_frequency_', 'numerical_normalized'),  # Scale 1-5 → normalized [0,1]
+    ('gym_frequency_', 'numerical_normalized'),  # Scale 1-5 → normalized [0,1]
+    ('spending_habits_', 'numerical_normalized'),  # Scale 1-5 → normalized [0,1]
+    
+    ('friday_night', 'unstructured_text_tfidf'),  # Lifestyle habits, TF-IDF
+    
+    ('additional_info_', 'string_optional')  # Free-form notes, optional
