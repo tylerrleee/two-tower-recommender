@@ -44,3 +44,4 @@
     ('friday_night', 'unstructured_text_tfidf'),  # Lifestyle habits, TF-IDF
     
     ('additional_info_', 'string_optional')  # Free-form notes, optional
+'ideal_big_little', 'looking_for_ace', 'icks', 'talk_for_hours_about', 'self_description'
