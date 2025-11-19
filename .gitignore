@@ -5,3 +5,5 @@ venv
 venv/*
 
 roadmap.txt
+
+__pycache__/
