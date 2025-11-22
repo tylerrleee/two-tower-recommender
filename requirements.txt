@@ -1,7 +1,11 @@
 # Core Python tools
 numpy
 pandas
-scipy
-scikit-learn
 
+
+sentence_transformers
+sklearn.preprocessing
+sklearn.compose
+typing
+faiss-cpu
 
