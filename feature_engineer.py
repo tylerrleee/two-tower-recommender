@@ -105,7 +105,15 @@ class FeatureEngineer:
             profile_text: : List[str]
             categorical_fields: One Hot Encoding
             numeric_field: Standard Scaler 
+        with the following steps:
+        1. Standardize all columns w/ rename
+        2. Clean all entries w/ trailing white space, string types, and NaN values
+        3. Clean profile text
         
+        Then, perform:
+        1. OneHotEncoding
+        2. Standard Scaler
+        3. Column Transformer
         Output: 
             update column_transforemr with our given DataFrame with a single matrix
         """
@@ -160,7 +168,7 @@ class FeatureEngineer:
         
         print("Finished Transforming.")
         return {
-            'profile_text': df['profile_text'].tolist(),
+            'profile_text': df['profile_text'].to_numpy(),
             'meta_features': x_meta,
             'index': df.index.to_numpy(),
             'raw_df': df

@@ -2,7 +2,6 @@ from sentence_transformers import SentenceTransformer
 import numpy as np
 import os
 from typing import Optional, Dict, Any, List
-import faiss
 import joblib
 
 class EmbeddingPipeline:
@@ -47,7 +46,6 @@ class EmbeddingPipeline:
             np.ndarray of shape (len(texts), embed_dim) 
                 - e.g. [3, 384] means 3 entries with 384 dimensions
         """
-        print("Encoding Corpus...")
         embeddings = self.model.encode(
             sentences  = texts,
             batch_size = self.batch_size,
@@ -57,7 +55,7 @@ class EmbeddingPipeline:
         )
         return embeddings
     
-    def combine_features(self, text_embeddings: np.ndarray, meta_features: np.ndarray):
+    def combine_features(self, text_features: np.ndarray, meta_features: np.ndarray):
         """
         Concatenate text embeddings with meta_features | 
         Args:
@@ -66,23 +64,34 @@ class EmbeddingPipeline:
         Return:
             A combined array of both embedding and features, ready to run similarity search
         """
-        print("Combining text embeddings & meta features...")
+
         # Check if meta feature exists
         if meta_features is None or meta_features.size == 0:
-             return text_embeddings
-        # check meta features does not match text embeddings
-        if text_embeddings.shape[0] != meta_features.shape[0]:
+            raise ValueError("Meta Feature does not exist or Empty")
+        if text_features is None or text_features.size == 0:
+            raise ValueError("Text Embeddings does not exist or Empty")
+                # check meta features does not match text embeddings
+        if text_features.shape[0] != meta_features.shape[0]:
              raise ValueError("Mismatched entries between text embedding & meta features!")
         
+
+        print("Encoding Meta Features...")
+        EMBEDDED_META = self.embed_texts(texts = meta_features, show_progress_bar=True)
+        print("Encoding Text Features...")
+        EMBEDDED_TEXT = self.embed_texts(texts = text_features, show_progress_bar=True)
+        print("Combining text embeddings & meta features...")
+
+
+
         # Cast precision type
-        text_embed = text_embeddings.astype(self.precision)
-        meta       = meta.astype(self.precision)
-        combined   = np.concatenate(arrays=[text_embed, meta], axis=1)
-        return combined
+        EMBEDDED_TEXT = EMBEDDED_TEXT.astype(self.precision)
+        EMBEDDED_META       = EMBEDDED_META.astype(self.precision)
+        COMBINED_DATA   = np.concatenate(arrays=[EMBEDDED_TEXT, EMBEDDED_META], axis=1)
+        return COMBINED_DATA
     
     
     # Save Embedding
-    def save_embedding(self, embeddings: np.ndarray, path: str, filename: str = "embeddings.npy");
+    def save_embedding(self, embeddings: np.ndarray, path: str, filename: str = "embeddings.npy"):
         print(f"Saving Embeddings at {path}/{filename} ...")
         os.makedirs(name     = path, 
                     exist_ok = True)
