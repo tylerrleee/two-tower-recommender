@@ -70,23 +70,26 @@ class EmbeddingPipeline:
             raise ValueError("Meta Feature does not exist or Empty")
         if text_features is None or text_features.size == 0:
             raise ValueError("Text Embeddings does not exist or Empty")
-                # check meta features does not match text embeddings
+        
+        # Mismatched entries amount
         if text_features.shape[0] != meta_features.shape[0]:
              raise ValueError("Mismatched entries between text embedding & meta features!")
         
 
-        print("Encoding Meta Features...")
-        EMBEDDED_META = self.embed_texts(texts = meta_features, show_progress_bar=True)
+
         print("Encoding Text Features...")
-        EMBEDDED_TEXT = self.embed_texts(texts = text_features, show_progress_bar=True)
+        if type(text_features[0]) == str:
+            print("Encoding Text Features...")
+            text_features = self.embed_texts(texts = text_features, show_progress_bar=True)
+
         print("Combining text embeddings & meta features...")
 
 
 
         # Cast precision type
-        EMBEDDED_TEXT = EMBEDDED_TEXT.astype(self.precision)
-        EMBEDDED_META       = EMBEDDED_META.astype(self.precision)
-        COMBINED_DATA   = np.concatenate(arrays=[EMBEDDED_TEXT, EMBEDDED_META], axis=1)
+        EMBEDDED_TEXT       = text_features.astype(self.precision)
+        EMBEDDED_META       = meta_features.astype(self.precision)
+        COMBINED_DATA       = np.concatenate((EMBEDDED_TEXT, EMBEDDED_META), axis=1)
         return COMBINED_DATA
     
     
