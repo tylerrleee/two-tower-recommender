@@ -176,3 +176,24 @@ class FeatureEngineer:
     def fit_transform(self, df: pd.DataFrame) -> Dict[str, np.ndarray]:
         self.fit(df)
         return self.transform(df)
+
+    def compute_diversity_features(self, df: pd.DataFrame) -> np.ndarray:
+        """
+        Compute features that helps identify complementary pairings
+        Example: extroversion difference, major overlap, hobby diversity
+
+        Goal:
+        1. Balancing Extroversion, so that we do not an extremely introverted & extroverted pairings
+        2. Balance Study and Social
+        """
+        diversity_features = []
+
+        # Extroversion complementary 
+        extro_complement = 1.0 - np.abs(df['extroversion'] - 0.5)
+        diversity_features.append(extro_complement)
+
+        # Study Social Balance
+        study_social_balance = np.abs(df['study_frequency'] - df['gym+frequency'])
+        diversity_features.append(study_social_balance)
+
+        return np.column_stack(diversity_features)
