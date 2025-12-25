@@ -63,7 +63,7 @@ class DiversityLoss(nn.Module):
             # Penalize high similarity scores
             # If a mentee is more than 50% similar, than we penalize
             penalty_threshold = 0.5 # ADJUST
-            diversity_loss = torch.mean(F.rely(mentee_sim[~mask] - penalty_threshold))
+            diversity_loss = torch.mean(F.relu(mentee_sim[~mask] - penalty_threshold))
         
         total_loss = (
             self.compatibility_weight * compatability_loss + 

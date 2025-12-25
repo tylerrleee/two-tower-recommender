@@ -29,34 +29,34 @@ class MentorMenteeDataset(Dataset):
             'pair_idx': self.positive_pairs[index]
         }
     
-    def train_epoch(model, dataloader, optimizer, criterion, device):
-        model.train()
-        total_loss = 0
+def train_epoch(model, dataloader, optimizer, criterion, device):
+    model.train()
+    total_loss = 0
 
-        for batch in dataloader:
-            mentor_feat = batch['mentor'].to(device)
-            mentee_feat = batch['mentee'].to(device)
-            mentee_div  = batch['mentee_div'].to(device)
+    for batch in dataloader:
+        mentor_feat = batch['mentor'].to(device)
+        mentee_feat = batch['mentee'].to(device)
+        mentee_div  = batch['mentee_div'].to(device)
 
-            optimizer.zero_grad()
+        optimizer.zero_grad()
 
-            # Forward pass
-            similarity, mentor_emb, mentee_emb = model(mentor_feat, mentee_feat)
+        # Forward pass
+        similarity, mentor_emb, mentee_emb = model(mentor_feat, mentee_feat)
 
-            # Compute Loss
-            labels = batch['pair_idx'].to(device)
-            loss, comp_loss, div_loss = criterion(
-                mentor_emb,
-                mentee_emb,
-                labels,
-                mentee_div
-            )
+        # Compute Loss
+        labels = batch['pair_idx'].to(device)
+        loss, comp_loss, div_loss = criterion(
+            mentor_emb,
+            mentee_emb,
+            labels,
+            mentee_div
+        )
 
-            # Backward Pass
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-            optimizer.step()
+        # Backward Pass
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters()) # Ensure that similar to equal users don't produce an explosive or NaN gradient
+        optimizer.step()
 
-            total_loss += loss.item()
+        total_loss += loss.item()
 
-        return total_loss / len(dataloader)
+    return total_loss / len(dataloader)

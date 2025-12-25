@@ -3,6 +3,7 @@ import numpy as np
 import os
 from typing import Optional, Dict, Any, List
 import joblib
+import faiss
 
 class EmbeddingPipeline:
     def __init__(self,
@@ -16,6 +17,7 @@ class EmbeddingPipeline:
                 self._model = None
                 self.device = 'cuda' if use_gpu else 'cpu'
                 self.precision = precision 
+                self.index = None
                 
     # Define our model 
     @property
@@ -108,8 +110,30 @@ class EmbeddingPipeline:
     
 
     # Build Faiss Index for Cosine Similarity
+    def build_faiss_index(self, combined_embeddings: np.ndarray):
+        """
+        Builds a Flat Inner Product index for Cosine Similarity search
 
+        """
+        # get dimensions
+        dimensions = combined_embeddings.shape[1]
+        self.index = faiss.IndexFlatIP(dimensions)
+
+        # Add vector to index
+        self.index.add(combined_embeddings.astype('float32'))
+        print(f"FAISS index built with {self.index.ntotal} vectors!")
     # Query Faiss (need normalization)
+    def query_index(self, query_vector: np.ndarray, top_k:int = 4):
+         """
+         Find the top_k most similar vectors to query
+         """
+         if not hasattr(self, 'index'):
+            raise RuntimeError("Index not built. Call build_faiss_index first.")     
 
+         query_vector = query_vector.astype('float32')    
+
+         distances, indices = self.index.search(query_vector, top_k)
+         
+         return distances, indices
     # Save model metadata & pipeline config
         
