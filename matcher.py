@@ -49,25 +49,21 @@ class GroupMatcher:
         n_mentors = len(mentor_emb)
         n_mentees = len(mentee_emb)
 
-        # Generate all possible pairs
-        mentee_pairs = list(combinations(range(n_mentees), n_mentees_per_mentor))
+        # Duplicate mentors sos each has 2 'slots' for mentees
+        expanded_mentor_emb = np.repeat(mentor_emb, 2, axis=0)
 
-        # score matrix: 
-        scores = np.zeros((n_mentors, len(mentee_pairs)))
-
-        all_compatbility_scores = np.dot(mentor_emb, mentee_emb.T)
+        cost_matrix = np.dot(expanded_mentor_emb, mentee_emb.T)
         
         # Find optimal Assignment
-        mentor_indices, pair_indices = linear_sum_assignment(all_compatbility_scores, maximize = True)
+        mentor_indices, pair_indices = linear_sum_assignment(cost_matrix, maximize = True)
 
-        groups = []
-        for m_index, p_index in zip(mentor_indices, pair_indices):
-            mentee_pair = mentee_pairs[p_index]
-            groups.append({
-                'mentor': m_index,
-                'mentees': list(mentee_pair),
-                'score': all_compatbility_scores[m_index, p_index]
-            })
+        groups = {}
+        for slot_index, mentee_idex in zip(mentor_indices, pair_indices):
+            real_mentor_index = slot_index // 2 # Convert slots back to [0, 0, 1,1, ...]
+            if real_mentor_index not in groups:
+                groups[real_mentor_index] = []
+            groups[real_mentor_index].append(mentee_idex)
+
         return groups
 
 
