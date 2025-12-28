@@ -193,7 +193,7 @@ class FeatureEngineer:
         diversity_features.append(extro_complement)
 
         # Study Social Balance
-        study_social_balance = np.abs(df['study_frequency'] - df['gym+frequency'])
+        study_social_balance = np.abs(df['study_frequency'] - df['gym_frequency'])
         diversity_features.append(study_social_balance)
 
         return np.column_stack(diversity_features)

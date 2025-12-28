@@ -61,7 +61,12 @@ class GroupMatcher:
     def find_best_groups_base(self, mentor_emb, mentee_emb):
         """
         Find Optimal group of 1 mentor + 2 mentees
-
+        1. Duplicate mentor embedding so that each mentor gets "2 slots"
+        2. Compute cost matrix for all possible pairings
+        3. Negates scores by maximizing similarity globally
+        
+        Complexity: O(n^3)
+        Bias: Good for smaller dataset
         Returns:
             groups: List of (mentor_index, [mentee_index1, mentee_index2])
         """
@@ -83,6 +88,14 @@ class GroupMatcher:
         Retrieve Augmented Matching: Uses FAISS to find Top-K mentors for each
         mentee, optimizes matching after. 
         Current implementation is CPU
+
+        1. Builds index for mentor embeddings
+        2. For each mentee, retrieve top-k mentor candidates
+        3. Creates cost matrix only for candidates
+        
+        Goal: Sacrifise precision for efficiency = near-optimal
+        Bias: for Large Datasets at O(k*n*log(m))
+
         """
 
         if self.faiss_index is None:
