@@ -108,7 +108,7 @@ class GroupMatcher:
         # distances = (n_mentees, top_k), indcices = (n_mentees, top_k)
         distances, mentor_candidate_indices = self.faiss_index.search(mentee_emb.astype('float32')
                                                                       , top_k)
-        # 2. Sparse Matrix Step : Cost matrix for top_k candidates
+        # 2. Sparse Matrix : Cost matrix for top_k candidates
         # low starting score to discourage matching non-candidate
         n_mentors = len(mentor_emb)
         n_mentees = len(mentee_emb)

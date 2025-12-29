@@ -5,7 +5,7 @@ from typing import Optional, Dict, Any, List
 import joblib
 import faiss
 
-class EmbeddingPipeline:
+class EmbeddingEngineer:
     def __init__(self,
                  sbert_model_name: str = "",
                  embedding_batch_size: int = 64,
