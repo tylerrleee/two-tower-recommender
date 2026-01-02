@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 
 
-from feature_engineer import FeatureEngineer
+from features import FeatureEngineer
 import config
 
 class End2EndMatching:
@@ -96,17 +96,42 @@ class End2EndMatching:
             2. Standard Scaler
             3. Column Transformer
         """
-        self.feature_engineer = FeatureEngineer(
+        self.feature_engineer   = FeatureEngineer(
             profile_text        = config.DEFAULT_PROFILE_TEXT,
             categorical_fields  = config.DEFAULT_CATEGORICALS,
             numeric_fields      = config.DEFAULT_NUMERICS
         )
 
-        # Encoding, Scaling
+        # Encoding, Scaling on ALL data
         self.feature_engineer.fit(df = self.df, rename_map=config.RENAME_MAP)
 
-        #
+        # Transform for each role
+        self.mentee_data = self.feature_engineer.transform(self.df_mentees)
+        print(f"Mentor profile texts: {self.mentor_data['profile_text'].shape}")
+        print(f"Mentor meta features: {self.mentor_data['meta_features'].shape}")
 
+        self.mentee_data = self.feature_engineer.transform(self.df_mentees)
+        print(f"Mentee profile texts: {self.mentee_data['profile_text'].shape}")
+        print(f"Mentee meta features: {self.mentee_data['meta_features'].shape}")
+
+        return self
+    
+    #def generate_embeddings(self):
+    
+
+
+
+
+
+def main():
+    """
+    1. Load data 
+    2. Add features | standardize names, norm, scaling
+    3. Generate embeddings | remove filler words, vectorize corpus, standardize dimensions
+    4. Initialize model | with & w/o FAISS index for tests
+    5. Training pipeline (optional)
+    """
+        
 
 
 
