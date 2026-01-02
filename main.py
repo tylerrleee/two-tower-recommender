@@ -12,9 +12,13 @@ Docstring for two-tower-recommender.main
 
 import numpy as np
 import pandas as pd
-
+import torch
 
 from features import FeatureEngineer
+from embedding import EmbeddingEngineer
+from model import TwoTowerModel
+from train import MentorMenteeDataset, train_epoch
+from loss import DiversityLoss
 import config
 
 class End2EndMatching:
@@ -23,6 +27,7 @@ class End2EndMatching:
             data_path: str,
             sbert_pretrained_model: str = "sentence-transformers/all-MiniLM-L6-v2",
             use_pretrained_model: bool  = False,
+            embedding_dimensions:       int = None,
             model_checkpoint_path: str  = None
             ):
         """
@@ -38,6 +43,7 @@ class End2EndMatching:
         self.sbert_pretrained_model = sbert_pretrained_model 
         self.use_pretrained_model   = use_pretrained_model
         self.model_checkpoint_path  = model_checkpoint_path
+        self.embedding_dimensions   = embedding_dimensions
 
         # COMPONENTS
         self.feature_engineer   = None
@@ -49,7 +55,7 @@ class End2EndMatching:
         self.df                 = None
         self.mentor_data        = None
         self.mentee_data        = None
-        self.mentor_embeddings  = None
+        self.mentor_embedding  = None
         self.mentee_embedding   = None
 
         #TODO cmd print when initialized
@@ -79,7 +85,7 @@ class End2EndMatching:
         self.df_mentees = mentee_emb
         return self
     
-    def load_mentor_embeddings(self, mentor_emb: pd.DataFrame):
+    def load_mentor_embedding(self, mentor_emb: pd.DataFrame):
         self.df_mentors = mentor_emb
         return self
     
@@ -116,15 +122,118 @@ class End2EndMatching:
 
         return self
     
-    #def generate_embeddings(self):
-    
+    def generate_embeddings(self):
+
+        self.embedding_engineer = EmbeddingEngineer(
+            sbert_model_name    =self.sbert_pretrained_model,
+            embedding_batch_size=64,
+            use_gpu             =torch.cuda.is_available()
+        )
+
+        # Generate embeddings
+        self.mentor_embedding = self.embedding_engineer.combine_features(
+            text_features=self.mentor_data['profile_text'],
+            meta_features=self.mentor_data['meta_features']
+        )
+        print(f"Mentor embeddings shape: {self.mentor_embedding.shape}")
 
 
+        self.mentee_embedding = self.embedding_engineer.combine_features(
+            text_features=self.mentee_data['profile_text'],
+            meta_features=self.mentee_data['meta_features']
+        )
+        print(f"Mentee embeddings shape: {self.mentee_embeddings.shape}")
+
+        return self
+
+    def initialize_model(self):
+        meta_feature_dim = self.mentor_embedding.shape[1] - self.embedding_dimensions
+
+        print(f"Text embedding dim: {self.embedding_dimensions}")
+        print(f"Meta feature dim: {meta_feature_dim}")
+
+        self.model = TwoTowerModel(
+            embedding_dim=self.embedding_dimensions,
+            meta_feature_dim=meta_feature_dim,
+            tower_hidden_dims = [256, 128, 64],
+            dropout_rate = 0.3
+        )
+
+        # Load Pretrained weights if true
+        if self.use_pretrained_model and self.model_checkpoint_path:
+            print(f"Loading pretrained model from: {self.model_checkpoint_path}")
+            self.model.load_state_dict(torch.load(self.model_checkpoint_path))
+        # TODO What to do when we don't use a pretrained model?
+
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.model = self.model.to(device)
+        self.model.eval()
+
+        return self
+
+    def train_model(self, num_epochs: int, batch_size: int, learning_rate: float):
+        print(f"Epochs: {num_epochs}, Batch size: {batch_size}, LR: {learning_rate}")
+
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+        # Get synthetic positive pairs
+        n_mentors    = len(self.mentor_embedding)
+        n_mentees    = len(self.mentee_embedding)
+        n_pairs      = min(n_mentees, n_mentors)
+
+        pos_pairs    = np.arange(n_pairs)
+
+        # Compute diversity features 
+        mentee_diversity = self.feature_engineer.compute_diversity_features(
+            df = self.df_mentees.head(n_pairs) # Compute for n_pairs of mentees
+        )
+
+        mentor_diversity = np.zeros((n_pairs, mentee_diversity.shape[1])) # Dummy
+ 
+        # Create dataset 
+        dataset = MentorMenteeDataset(
+            mentee_features     =   self.mentee_embedding[:n_pairs],
+            mentor_features     =   self.mentor_embedding[:n_pairs],
+            mentee_diversity    =   mentee_diversity, 
+            mentor_diversity    =   mentor_diversity,
+            positive_pairs      =   pos_pairs
+        )
+
+        dataLoader = torch.utils.data.DataLoader(dataset = dataset, # 
+                                    batch_size=batch_size,
+                                    shuffle=True) 
+        # TODO Test parallel loading w/ num_workers
+        optimizer = torch.optim.Adam(self.model.parameters(), 
+                                     lr = learning_rate)
+        criterion = DiversityLoss(
+            compatibility_weight=0.7,
+            diversity_weight=0.3,
+            temperature=0.1
+        )
+        # TODO Test at different DiversityLoss weights
+
+        print("Starting training...")
+        for epoch in range(num_epochs):
+            avg_loss = train_epoch(model        = self.model, 
+                                   dataloader   = dataLoader,
+                                   optimizer    = optimizer,
+                                   criterion    = criterion,
+                                   device       = device)
+            # We could use 
+            print(f"Epoch {epoch+1}/{num_epochs} - Loss: {avg_loss:.4f}")
+        print("Training completed!")
+
+        save_path = f"model_checkpoint_epoch{num_epochs}.pt"
+        torch.save(self.model.state_dict(), save_path)
+        print(f"✓ Model saved to: {save_path}")
+
+        return self
 
 
 
 def main():
     """
+    TODO
     1. Load data 
     2. Add features | standardize names, norm, scaling
     3. Generate embeddings | remove filler words, vectorize corpus, standardize dimensions
