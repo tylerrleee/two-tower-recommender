@@ -31,11 +31,11 @@ class FeatureEngineer:
         self.fitted = False
     
     @staticmethod
-    def rename_column(df: pd.DataFrame) -> pd.DataFrame:
+    def rename_column(df: pd.DataFrame, rename_map: dict) -> pd.DataFrame:
         """
         Rename all columns in-place for the given column name map in config.py
         """
-        df = df.rename(columns=config.RENAME_MAP)
+        df = df.rename(columns = rename_map)
         
         # lower all columns 
         df.columns = [col.lower() for col in df.columns]
@@ -98,7 +98,7 @@ class FeatureEngineer:
                 df_copy[col] = df_copy[col].fillna(0).astype(float)
         return df_copy
 
-    def fit(self, df: pd.DataFrame):
+    def fit(self, df: pd.DataFrame,  rename_map: Optional[dict]):
         """
         Performing preprocessing transformation on profile_text, categorical_fields, numeric_fields
         where we transformed:
@@ -117,9 +117,9 @@ class FeatureEngineer:
         Output: 
             update column_transforemr with our given DataFrame with a single matrix
         """
-        print("Fitting DataFrame...")
+        if rename_map:
+            df = self.rename_column(df)
 
-        df = self.rename_column(df)
         df = self._clean_table(df)
         df['profile_text'] = self.build_profile_text(df, self.profile_text)
         
