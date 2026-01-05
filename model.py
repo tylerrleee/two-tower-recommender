@@ -52,6 +52,6 @@ class TwoTowerModel(nn.Module):
         emb = self.mentor_tower(mentor_features)
         return F.normalize(emb, p=2, dim=1)
     
-    def get_mentee_embedding(self, mentee_features):
+    def get_mentee_embedding(self, mentee_features: torch.FloatTensor):
         emb = self.mentee_tower(mentee_features)
         return F.normalize(emb, p=2, dim=1)

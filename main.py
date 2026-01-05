@@ -18,6 +18,7 @@ from features import FeatureEngineer
 from embedding import EmbeddingEngineer
 from model import TwoTowerModel
 from train import MentorMenteeDataset, train_epoch
+from matcher import GroupMatcher
 from loss import DiversityLoss
 import config
 
@@ -55,8 +56,13 @@ class End2EndMatching:
         self.df                 = None
         self.mentor_data        = None
         self.mentee_data        = None
-        self.mentor_embedding  = None
+        self.mentor_embedding   = None
         self.mentee_embedding   = None
+        self.mentee_embeddings_learned = None
+        self.mentor_embeddings_learned = None
+
+        # MATCHING
+        self.groups             = None
 
         #TODO cmd print when initialized
     
@@ -75,9 +81,9 @@ class End2EndMatching:
         print(f"Mentors: {len(self.df_mentors)}")
         print(f"Mentees: {len(self.df_mentees)}") 
 
+        # Ratio Check
         if len(self.df_mentees) != 2 * len(self.df_mentors):
-            print(f"⚠ Warning: Ideal ratio is 2 mentees per mentor")
-            print(f"  Current ratio: {len(self.df_mentees) / len(self.df_mentors):.2f}:1")
+            print(f"Current ratio: {len(self.df_mentees) / len(self.df_mentors):.2f}:1")
         
         return self
     
@@ -167,11 +173,20 @@ class End2EndMatching:
 
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model = self.model.to(device)
-        self.model.eval()
+        
 
         return self
 
     def train_model(self, num_epochs: int, batch_size: int, learning_rate: float):
+        """
+        Training the model
+
+        Args:
+            num_epochs: Number of training epochs
+            batch_sizes: batch size for training
+            learning_rate: Learning rate for optimizer
+        
+        """
         print(f"Epochs: {num_epochs}, Batch size: {batch_size}, LR: {learning_rate}")
 
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -182,7 +197,7 @@ class End2EndMatching:
         n_pairs      = min(n_mentees, n_mentors)
 
         pos_pairs    = np.arange(n_pairs)
-
+        
         # Compute diversity features 
         mentee_diversity = self.feature_engineer.compute_diversity_features(
             df = self.df_mentees.head(n_pairs) # Compute for n_pairs of mentees
@@ -199,10 +214,9 @@ class End2EndMatching:
             positive_pairs      =   pos_pairs
         )
 
-        dataLoader = torch.utils.data.DataLoader(dataset = dataset, # 
+        dataLoader = torch.utils.data.DataLoader(dataset = dataset,  
                                     batch_size=batch_size,
                                     shuffle=True) 
-        # TODO Test parallel loading w/ num_workers
         optimizer = torch.optim.Adam(self.model.parameters(), 
                                      lr = learning_rate)
         criterion = DiversityLoss(
@@ -210,9 +224,11 @@ class End2EndMatching:
             diversity_weight=0.3,
             temperature=0.1
         )
-        # TODO Test at different DiversityLoss weights
 
         print("Starting training...")
+        # Batch Norm updated running statistics + Dropout layers perform random drop out on input 
+        self.model.train() 
+
         for epoch in range(num_epochs):
             avg_loss = train_epoch(model        = self.model, 
                                    dataloader   = dataLoader,
@@ -225,12 +241,75 @@ class End2EndMatching:
 
         save_path = f"model_checkpoint_epoch{num_epochs}.pt"
         torch.save(self.model.state_dict(), save_path)
-        print(f"✓ Model saved to: {save_path}")
+        print(f"Model saved to: {save_path}")
 
         return self
 
+    def generate_mentor_embeddings(self):
+        """
+        Generate learned embeddings for all mentors using train model
+        """
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.model.eval()
 
+        # turn off gradianet computation
+        with torch.no_grad():
+            # Convert to sentors
+            mentor_tensor = torch.FloatTensor(self.mentor_embedding).to(device)
+            mentee_tensor = torch.FloatTensor(self.mentee_embedding).to(device)
 
+            # Get learned embeddings
+            learned_mentor_embedding = self.model.get_mentor_embedding(mentor_tensor)
+            learned_mentee_embedding = self.model.get_mentee_embedding(mentee_tensor)
+
+            # Numpy Array conversion + create new variable
+            self.mentor_embeddings_learned = learned_mentor_embedding.cpu().numpy()
+            self.mentee_embeddings_learned = learned_mentee_embedding.cpu().numpy()
+        
+        print(f"Learned mentor embeddings: {self.mentor_embeddings_learned.shape}")
+        print(f"Learned mentee embeddings: {self.mentee_embeddings_learned.shape}")
+        
+        return self
+
+    def match_groups(self, use_faiss: bool = False, top_k: int = 10):
+        """
+        Generate matched groups
+        
+        Args:
+            use_faiss: FAISS accelerated matching -- sacrifise precision for effiency
+            top_k: Number of candidates for FAISS
+        
+        """
+
+        # If model was trained, otherwise use raw embeddings
+        if hasattr(self, 'mentee_embeddings_learned'):
+            mentor_emb = self.mentor_embeddings_learned
+            mentee_emb = self.mentee_embeddings_learned
+        else:
+            mentor_emb = self.mentor_embedding
+            mentee_emb = self.mentee_embedding
+
+        # Initialize Matcher
+        self.matcher = GroupMatcher(
+            model=self.model,
+            compatibility_weight=0.6,
+            diversity_weight=0.4
+        )
+
+        # Choose matching algo
+        if use_faiss:
+            self.groups = self.matcher.find_best_groups_faiss(
+                mentee_emb  =   mentor_emb,
+                mentee_emb  =   mentee_emb,
+                top_k       =   top_k
+            )
+        else:
+            self.groups = self.matcher.find_best_groups_base(
+                mentor_emb  =   mentor_emb,
+                mentee_emb  =   mentee_emb
+            )
+        print(f"Created {len(self.groups)} mentor-mentee groups")
+        return self
 def main():
     """
     TODO
@@ -242,7 +321,9 @@ def main():
     """
         
 
-
+# TODO import logging and replace all print statements - 
+# TODO Test at different DiversityLoss weights - training
+# TODO Test parallel loading w/ num_workers - training
 
         
 

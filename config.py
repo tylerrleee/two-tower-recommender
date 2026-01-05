@@ -38,7 +38,7 @@ DEFAULT_PROFILE_TEXT = [
                         'free_time',
                         'hobbies',
                         'self_description',
-                        'icks',
+                        'dislikes',
                         'talk_for_hours_about',
                         'friday_night',
                         'additional_info'

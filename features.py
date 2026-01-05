@@ -153,13 +153,14 @@ class FeatureEngineer:
         print("Transforming...")
 
         if not self.fitted or self.column_transformer is None:
-            raise RuntimeError("FeatureEngineer must be fitted before transform(). Call fit() first.")
-
-        df = self.rename_column(df)
-        df = self._clean_table(df)
-        df['profile_text'] = self.build_profile_text(df, self.profile_text)
+            raise RuntimeError("Features must be fitted before transform(). Call fit() first.")
         
-        print("Our current DataFrame", df.head())
+        # Reduncdant - Since we are doing the fitting first, these are repeated
+        #df = self.rename_column(df)
+        #df = self._clean_table(df)
+        #df['profile_text'] = self.build_profile_text(df, self.profile_text)
+        
+        # print("Our current DataFrame", df.head())
 
         x_meta = self.column_transformer.transform(df)
         # If OneHotEncoder is Sparse -> cast to dense | Empty fields are filled with zeros
