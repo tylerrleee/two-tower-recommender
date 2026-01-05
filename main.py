@@ -386,7 +386,11 @@ class End2EndMatching:
         return self
 
 
-
+    def save_results(self, output_dir: str):
+        """
+        Save matching results to a CSV file
+        """
+        ...
             
 
 
