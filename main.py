@@ -8,6 +8,9 @@ Docstring for two-tower-recommender.main
 5. Train Model
 6. Match Groups 
 7. Formatting for readability
+
+Note:
+- return self on methods without a return value for chaining purposes
 """
 
 import numpy as np
@@ -63,6 +66,7 @@ class End2EndMatching:
 
         # MATCHING
         self.groups             = None
+        self.results            = None
 
         #TODO cmd print when initialized
     
@@ -310,6 +314,82 @@ class End2EndMatching:
             )
         print(f"Created {len(self.groups)} mentor-mentee groups")
         return self
+
+    def set_output_result(self):
+        """
+        Format groups in readable format
+        """
+        results = []
+
+        for mentor_idx, group_info in self.groups.items():
+            # Get mentor info - assuming all names are unique (for now)
+            mentor_row      = self.df_mentors.iloc[mentor_idx]
+            mentor_name     = mentor_row['Name']
+            mentor_major    = mentor_row['Major']
+
+            # Get mentee info
+            mentee_indices  = group_info['mentees']
+            mentees_info    = []
+
+            # mentee candidate checking
+            
+            for mentee_idx in mentee_indices:
+                mentee_row = self.df_mentees.iloc[mentee_idx]
+                mentees_info.append({
+                    'name': mentee_row['Name'],
+                    'major': mentee_row['Major'],
+                    'year': mentee_row['Year']
+                })
+            
+            avg_compatibility = float(group_info['total_compatibility_score'] / len(mentee_indices))
+
+            result = {
+                'group_id': int(mentor_idx),
+                'mentor':{
+                    'name'  : mentor_name,
+                    'major' : mentor_major,
+                    'email' : mentor_row['ufl_email']
+                },
+                'mentees'   : mentees_info,
+                'compatibility_score'   : avg_compatibility,
+                'individual_scores'     : [float(s) for s in group_info['individual_scores']]
+            }
+
+            results.append(result)
+
+        results.sort(key=lambda x: x['compatibility_score'], reverse=True)  
+
+        self.results = results 
+        return self
+    
+    def display_results(self):
+        """
+        Command line display on matching results, referencing outputs results from set_output_result()
+
+        """
+        print("=" * 60)
+        print("MENTOR-MENTEE GROUP RECOMMENDATIONS")
+        print("=" * 60)
+
+        for i, result in enumerate(self.results, 1):
+            print(f"\n Group {i} Compatbility Score: {result['compatbility_score']:.2f}")
+            print(f"Mentor: {result['mentor']['name']} ({result['mentor']['major']})")
+            print(f'Email: {result['mentor']['email']}')
+
+            for j, mentee in enumerate(result['mentees']):
+                score = result['invididual_scores'][j]
+                print(f" {j}. {mentee['name']} \
+                        - Year: {mentee['year']} \
+                        - Major: ({mentee['major']} \
+                        - Score: {score:.3f}")
+
+        return self
+
+
+
+            
+
+
 def main():
     """
     TODO
