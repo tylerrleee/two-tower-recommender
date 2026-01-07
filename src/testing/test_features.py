@@ -113,21 +113,136 @@ class TestCleanTable(unittest.TestCase):
         - Floats are treated the same
         ^ all numerics should be passed as a string, so we dont have to check floating numbers
         """
-        fe = FeatureEngineer(
+        FE = FeatureEngineer(
             numeric_fields=["age", "going_out"]
         )
 
         df = pd.DataFrame({
-            "age": ["20", "bad", None], 
-            "going_out": ["10.0", "5.0", None],
-            "name": ["Alice", None, "Bob"]
+            "age"       : ["20", "bad", None], 
+            "going_out" : ["10.0", "5.0", None],
+            "name"      : ["Alice", None, "Bob"]
         })
 
-        result = fe._clean_table(df)
+        result = FE._clean_table(df)
 
         self.assertEqual(result["age"].tolist(), [20.0, 0.0, 0.0])
         self.assertEqual(result["going_out"].tolist(), [10.0, 5.0, 0.0])
         self.assertEqual(result["name"].tolist(), ["Alice", "", "Bob"])
+
+class TestFit(unittest.TestCase):
+    """
+    - ColumnTransformer is created
+    - fitted flag is setr
+    - Correct number of output features
+    - Error when there are no valid features
+    """
+    def test_fit_sets_fitted(self):
+        """
+        Once perform fitting, the variable instance are updated accordingly
+        - Fitted is True 
+        - ColumnTransformer is updated
+        """
+        df = pd.DataFrame({
+            "gender"    : ["M", "F"],
+            "age"       : [20, 30]
+        })
+
+        FE = FeatureEngineer(
+            profile_text        = [],
+            categorical_fields  = ["gender"],
+            numeric_fields      = ["age"]
+        )
+
+        FE.fit(df=df,
+               rename_map=None)
+        
+        self.assertTrue(FE.fitted)
+        self.assertIsNotNone(FE.column_transformer)
+    
+    def test_fit_raises_if_no_features(self):
+        """
+        Given missing features, does fitting it raise a ValueError?
+        """
+        df = pd.DataFrame({"a": [1, 2]})
+
+        fe = FeatureEngineer(
+            profile_text        = [],
+            categorical_fields  = ["missing"],
+            numeric_fields      = ["also_missing"]
+        )
+
+        with self.assertRaises(ValueError):
+            fe.fit(df, rename_map=None)
+
+class TestTransform(unittest.TestCase):
+    """
+    - Raises if not fitted
+    - Output keys exist
+    - Output arrays shapes are consistent
+    - Meta Features are numeric only
+    """
+    def test_transform_before_fit_raises(self):
+        fe = FeatureEngineer(
+            profile_text        =["bio"],
+            categorical_fields  =["gender"],
+            numeric_fields      =["age"]
+        )
+
+        df = pd.DataFrame({
+            "bio"   : ["Hello"],
+            "gender": ["M"],
+            "age"   : [20]
+        })
+
+        with self.assertRaises(RuntimeError):
+            fe.transform(df)
+    
+    def test_transform_output_structure(self):
+        """
+        - number of profile text and metadata should match the number of apps
+        - Once fitted, we can transform the df
+        - result should have 4 key outputs
+        """
+        df = pd.DataFrame({
+            "bio"   : ["Hello", "Hi"],
+            "gender": ["M", "F"],
+            "age"   : [20, 30]
+        })
+
+        fe = FeatureEngineer(
+            profile_text        =["bio"],
+            categorical_fields  =["gender"],
+            numeric_fields      =["age"]
+        )
+
+        fe.fit(df, rename_map=None)
+        result = fe.transform(df)
+
+        self.assertIn("profile_text", result)
+        self.assertIn("meta_features", result)
+        self.assertIn("index", result)
+        self.assertIn("raw_df", result)
+
+        n_applicants = len(df['bio'])
+        self.assertEqual(len(result["profile_text"]), n_applicants) # 2 applicants
+        self.assertEqual(result["meta_features"].shape[0], n_applicants) # 2 applicants
+
+class TestDiversityFeatures(unittest.TestCase):
+
+    def test_compute_diversity_features(self):
+        df = pd.DataFrame({
+            "extroversion": [0.5, 1.0],
+            "study_frequency": [3, 5],
+            "gym_frequency": [3, 1]
+        })
+
+        FE = FeatureEngineer()
+
+        result = FE.compute_diversity_features(df)
+
+        self.assertEqual(result.shape, (2, 2))
+        self.assertAlmostEqual(result[0, 0], 1.0)
+        self.assertEqual(result[1, 1], 4)
 
 if __name__ == '__main__':
     unittest.main()

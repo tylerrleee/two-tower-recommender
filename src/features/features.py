@@ -22,13 +22,17 @@ class FeatureEngineer:
             categorical_fields: Optional[list[str]] = None,
             numeric_fields: Optional[List[str]]     = None
     ):
-        self.profile_text       = profile_text
-        self.categorical_fields = categorical_fields
-        self.numeric_fields     = numeric_fields
-
+        self.profile_text      : dict = profile_text
+        self.categorical_fields: dict = categorical_fields
+        self.numeric_fields    : dict = numeric_fields
+        self.rename_map        : dict = None
         # ColumnTransformer Fit
         self.column_transformer: Optional[ColumnTransformer] = None
-        self.fitted = False
+        self.fitted: bool  = False
+
+        # Output
+        self.x_meta: pd.DataFrame = None
+        self.df: pd.DataFrame     = None
     
     @staticmethod
     def rename_column(df: pd.DataFrame, rename_map: dict) -> pd.DataFrame:
@@ -138,11 +142,11 @@ class FeatureEngineer:
         Output: 
             update column_transforemr with our given DataFrame with a single matrix
         """
-        if rename_map:
-            df = self.rename_column(df)
+        self.rename_map = rename_map 
+        if self.rename_map:
+            df = self.rename_column(df, self.rename_map)
 
         df = self._clean_table(df)
-        df['profile_text'] = self.build_profile_text(df, self.profile_text)
         
         # Building our ColumnTransformer through Onehot & StandardScaler
         transformers = []
@@ -164,10 +168,13 @@ class FeatureEngineer:
 
         self.column_transformer = ColumnTransformer(transformers=transformers, 
                                                     remainder='drop') # Drop other features not mentioned
-        x_meta = self.column_transformer.fit_transform(df)
+        
+        # Fit using ColumnTransformer
+        self.column_transformer.fit(df)
         self.fitted = True
-        print("Finished Fitting.")
-        print("Fit Status: ", self.fitted)
+        print(f"Fitted ColumnTransformer on {len(df)} samples")
+        print(f"  - Categorical features: {available_category}")
+        print(f"  - Numerical features: {available_nums}")
         return self
 
     def transform(self, df: pd.DataFrame) -> Dict[str, np.ndarray]:
@@ -182,13 +189,24 @@ class FeatureEngineer:
         #df['profile_text'] = self.build_profile_text(df, self.profile_text)
         
         # print("Our current DataFrame", df.head())
+        if self.rename_map:
+            df = self.rename_column(df, self.rename_map)
 
-        x_meta = self.column_transformer.transform(df)
-        # If OneHotEncoder is Sparse -> cast to dense | Empty fields are filled with zeros
-        if hasattr(x_meta, "toarray"):
-            x_meta = x_meta.toarray()
+        df['profile_text'] = self.build_profile_text(df, self.profile_text)
         
-        print("Finished Transforming.")
+        # Transform using ColumnTransformer
+        x_meta = self.column_transformer.transform(df)
+
+        # If metadata is sparse, we convert to dense
+        if hasattr(x_meta, "to_array"):
+            x_meta = x_meta.to_array()
+
+        print(f"Transformed features shape: {x_meta.shape}")
+
+        assert x_meta.shape[0] == len(df), \
+            f"Mismatch: x_meta has {x_meta.shape[0]} samples but df has {len(df)}"
+
+
         return {
             'profile_text': df['profile_text'].to_numpy(),
             'meta_features': x_meta,
