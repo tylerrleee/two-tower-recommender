@@ -27,7 +27,14 @@ The *Stable Marriage Problem* requires every applicant to rank every other appli
 
 The approach: Use content-based features to compute compatibility automatically, requiring zero manual rankings 
 
-## Core Components
+<a href="https://github.com/haley/hatchamatch?tab=readme-ov-file"> Hatch-a-Match - Genetic Algorithm</a>
+
+<a href="https://www.math.cmu.edu/users/math/af1p/Teaching/OR2/Projects/P44/E.pdf"> Big-Little Pairings at Carnegie Mellon Univeristy - Stable Marriage Problem & Greedy</a>
+
+-----
+## Core Components 
+
+TODO
 
 1. Feature Engineering
 
@@ -41,65 +48,20 @@ The approach: Use content-based features to compute compatibility automatically,
 
 6. Training Pipeline
 
-## Why Two-Tower Architecture over other Approaches?
+## Why Two-Tower Architecture over other Approaches? 
+
+TODO
 
 ## Diversity Loss Equation
 
-$$
-\[
+```math
 \mathcal{L}_{\text{total}}
 =
-\lambda_c
-\left(
-- \frac{1}{N}
-\sum_{i=1}^{N}
-\log
-\frac{
-\exp\left(\frac{\mathbf{m}_i^\top \mathbf{e}_i}{\tau}\right)
-}{
-\sum_{j=1}^{N}
-\exp\left(\frac{\mathbf{m}_i^\top \mathbf{e}_j}{\tau}\right)
-}
-\right)
+\lambda_c \, \mathcal{L}_{\text{compat}}
 +
-\lambda_d
-\left(
-\frac{1}{N(N-1)}
-\sum_{i \neq j}
-\max\left(0, \cos(\mathbf{d}_i, \mathbf{d}_j) - \delta \right)
-\right)
-\]
-$$
-
-<a href="https://github.com/haley/hatchamatch?tab=readme-ov-file"> Hatch-a-Match - Genetic Algorithm</a>
-
-<a href="https://www.math.cmu.edu/users/math/af1p/Teaching/OR2/Projects/P44/E.pdf"> Big-Little Pairings at Carnegie Mellon Univeristy - Stable Marriage Problem & Greedy</a>
-
-# Initial Challenges 
-
-Big/Little and Mentor/Mentee programs are different for different organizations, in terms of:
-
-1. Volumn of applications (100-300+)
-2. Type of questions being asked 
-3. Preferences in a little/bigs
-
-what we know that are the same:
-
-1. Most programs are surveyed through Google Form, so the corpus we are working with are:
-
-- Short and long responses to open-ended questions
-- Preference scale from 0-5
-- Big or Little
-
-## Which means
-
-1. The volumn of application means we cannot utilize the *Stable Marriage Problem*, as it is unrealistic to have every applicant rank every other applicant
-
-2. Cold Start Problem: most applicants does not prior history or documented context with the organization
-
-2. Transfer Learning: Making a model that can work for future applications, even if the questions changes. 
-
-3. Speed: Every semester, Recommendations are made once, so speed is not necessarily the priority
+\lambda_d \, \mathcal{L}_{\text{div}}
+```
+ 
 
 # Resources used
 
@@ -111,4 +73,6 @@ what we know that are the same:
 
 <a href="https://cloud.google.com/blog/products/ai-machine-learning/scaling-deep-retrieval-tensorflow-two-towers-architecture"> Google Cloud Tensorflow deep retrieval using Two Towers architecture </a>
 
+
+<a href="https://medium.com/@mlshark/infonce-explained-in-details-and-implementations-902f28199ce6"> Google Contrastive Learning: InfoNCE </a>
 
