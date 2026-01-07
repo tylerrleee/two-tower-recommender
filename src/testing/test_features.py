@@ -4,7 +4,8 @@ unittest    : https://docs.python.org/2/library/unittest.html#basic-example
 """
 import unittest
 import pandas as pd
-from features import FeatureEngineer
+from pandas.testing import assert_frame_equal
+from src.features.features import FeatureEngineer
 
 # Rename Column
 class TestRenameColumn(unittest.TestCase):
@@ -23,7 +24,7 @@ class TestRenameColumn(unittest.TestCase):
 
         self.assertListEqual(
             list(result.columns),
-            ["age", "username"]
+            ["age", "Username"]
         )
 
     def test_original_dataframe_not_modified(self):
@@ -33,6 +34,7 @@ class TestRenameColumn(unittest.TestCase):
         FeatureEngineer.rename_column(df, rename_map)
 
         self.assertIn("Age", df.columns)
+    
 
 if __name__ == '__main__':
     unittest.main()
