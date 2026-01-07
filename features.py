@@ -7,7 +7,7 @@
 
 import numpy as np
 import pandas as pd
-from sentence_transformers import SentenceTransformer
+# from sentence_transformers import SentenceTransformer
 from typing import List, Optional, Dict
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
