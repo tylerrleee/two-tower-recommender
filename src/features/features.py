@@ -36,9 +36,28 @@ class FeatureEngineer:
         Rename all columns in-place for the given column name map in config.py
         """
         df = df.rename(columns = rename_map)
+
+
+        # Perform string casting on all column names, remove trailing space, & lower all names
+        # List comprehension handling None values - when users did fill out Rename_Map right
+        df.columns = [
+            col if col is None else str(col).strip().lower()
+            for col in df.columns
+        ]
+        """ Same purpose but much lengthier
+        new_cols = []
+        for col in df.columns:
+            if col is not None:
+                new_cols.append(str(col).strip().lower())
+            else:
+                new_cols.append(col)
+        df.columns = new_cols
+        """
         
-        # lower all columns 
-        df.columns = [col.lower() for col in df.columns]
+        # Check if there are duplicat column names
+        if df.columns.duplicated().any():
+            raise ValueError("Duplicate column names after lowercasing")
+
         return df
     
     @staticmethod
@@ -69,8 +88,9 @@ class FeatureEngineer:
                 if candidate_text:
                     parts.append(candidate_text)
 
+            # If multiple text field, delimit by a period
             if parts:
-                return ". ".join(parts)
+                return ". ".join(parts) 
             else:
                 return ""
         
@@ -83,6 +103,7 @@ class FeatureEngineer:
         Return:
             A new copy of cleaned DataFrame
         """
+        # Shallow Copy?
         df_copy = df.copy()
         
         # Standardize all columns to str
