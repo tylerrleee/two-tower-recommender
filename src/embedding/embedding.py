@@ -1,9 +1,9 @@
 from sentence_transformers import SentenceTransformer
 import numpy as np
 import os
-from typing import Optional, Dict, Any, List
-import joblib
+from typing import Optional, List
 import faiss
+
 
 class EmbeddingEngineer:
     def __init__(self,
@@ -80,7 +80,9 @@ class EmbeddingEngineer:
 
 
         print("Encoding Text Features...")
-        if type(text_features[0]) == str:
+        # Case when embed_texts is not yet called
+        # ignore when text features is None
+        if len(text_features) > 0 and isinstance(text_features[0], str):
             print("Encoding Text Features...")
             text_features = self.embed_texts(texts = text_features, show_progress_bar=True)
 
