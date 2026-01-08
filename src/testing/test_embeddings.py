@@ -4,6 +4,13 @@ import pandas as pd
 import unittest
 from unittest.mock import Mock, patch, MagicMock
 
+# Disable FAISS multi-threading to prevent runtime conflict + segfault
+# MacOS causes conflict with FAISS compilation -> segfault
+import os
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+import faiss
+faiss.omp_set_num_threads(1)
 
 class TestEmbeddingEngineerInit(unittest.TestCase):
 
@@ -267,13 +274,208 @@ class TestCombineFeatures(unittest.TestCase):
         
         self.assertIn("Mismatched entries", str(context.exception))
 
+class TestFAISSIndex(unittest.TestCase):
+    """Test FAISS index building and querying"""
+    
+    def setUp(self):
+        """Set up EmbeddingEngineer for testing"""
+        self.ee = EmbeddingEngineer(sbert_model_name="test-model",
+                                    use_gpu=False)
+    
+    def test_build_faiss_index_basic(self):
+        """Test building FAISS index"""
+        embeddings = np.random.rand(10, 64).astype(np.float32)
+        
+        self.ee.build_faiss_index(embeddings)
+        
+        self.assertIsNotNone(self.ee.index)
+        self.assertEqual(self.ee.index.ntotal, 10)
 
+    def test_build_faiss_index_dimensions(self):
+        """Test that FAISS index has correct dimensions"""
+        embedding_dim = 128
+        embeddings = np.random.rand(5, embedding_dim).astype(np.float32)
+        
+        self.ee.build_faiss_index(embeddings)
+        
+        self.assertEqual(self.ee.index.d, embedding_dim)
+        
+    def test_build_faiss_index_empty(self):
+        """Test building index with empty embeddings"""
+        embeddings = np.empty((0, 64), dtype=np.float32)
+        
+        self.ee.build_faiss_index(embeddings)
+        
+        self.assertEqual(self.ee.index.ntotal, 0) # empty embeddings == no index representation
+    def test_query_index_basic(self):
+        """Test querying FAISS index"""
+        # Build index with known (4,3) vectors
+        embeddings = np.array([ 
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [0.9, 0.1, 0.0]
+        ], dtype=np.float32)
+        
+        self.ee.build_faiss_index(embeddings)
+        
+        # Query with vector similar to first embedding
+        query = np.array([[1.0, 0.0, 0.0]], dtype=np.float32)
+        distances, indices = self.ee.query_index(query, top_k=2)
+        
+        # Should return 2 results
+        self.assertEqual(distances.shape, (1, 2))
+        self.assertEqual(indices.shape, (1, 2))
+        
+        # First result should be index 0 (exact match)
+        self.assertEqual(indices[0, 0], 0)
+
+    def test_query_index_top_k(self):
+        """Test querying with different top_k values"""
+        embeddings = np.random.rand(10, 64).astype(np.float32)
+        self.ee.build_faiss_index(embeddings)
+        
+        query = np.array([[0.5] * 64], dtype=np.float32) # shape: (64,1)
+        
+        # Test different top_k values
+        for k in [1, 3, 5, 10]:
+            distances, indices = self.ee.query_index(query, top_k=k)
+            self.assertEqual(distances.shape, (1, k))
+            self.assertEqual(indices.shape, (1, k))
+
+    def test_query_index_multiple_queries(self):
+        """FAISS returns correct top-k matches for multiple queries"""
+        np.random.seed(0)
+
+        embeddings = np.random.rand(20, 64).astype(np.float32)
+        faiss.normalize_L2(embeddings)
+
+        self.ee.build_faiss_index(embeddings)
+
+        # Use known embeddings as queries (self-match should be rank-1)
+        queries = embeddings[:3].copy()
+
+        distances, indices = self.ee.query_index(queries, top_k=5)
+
+        # Shape checks
+        self.assertEqual(distances.shape, (3, 5))
+        self.assertEqual(indices.shape, (3, 5))
+
+        # Each query should retrieve itself as top-1
+        for i in range(3):
+            self.assertEqual(indices[i, 0], i)
+            self.assertAlmostEqual(distances[i, 0], 1.0, places=5)
+
+        # Distances sorted descending
+        self.assertTrue(
+            np.all(np.diff(distances, axis=1) <= 1e-6)
+        )
+
+    def test_query_index_raises_without_index(self):
+        """Test that querying raises error if index not built"""
+        query = np.array([[0.1, 0.2, 0.3]], dtype=np.float32)
+        
+        with self.assertRaises(RuntimeError) as context:
+            self.ee.query_index(query, top_k=5)
+        
+        self.assertIn("Index not built", str(context.exception))
+
+class TestIntegration(unittest.TestCase):
+    """Integration tests for complete embedding.py workflows"""
+    
+    def setUp(self):
+        """Set up for integration tests"""
+        self.ee = EmbeddingEngineer(sbert_model_name="test-model")
+        self.ee._model = Mock()
+    
+    def test_full_embedding_pipeline(self):
+        """Test complete pipeline: embed texts -> combine features -> build index
+        - Assuming we have done feature scaling from features.py"""
+        # Step 1: Embed texts
+        texts = ["Text 1", "Text 2", "Text 3"]
+        text_embeddings = np.random.rand(3, 384).astype(np.float32)
+        self.ee._model.encode.return_value = text_embeddings
+        
+        embedded = self.ee.embed_texts(texts)
+        
+        # Step 2: Combine with meta features
+        meta_features = np.random.rand(3, 16).astype(np.float32)
+        combined = self.ee.combine_features(embedded, meta_features)
+        
+        # Step 3: Build FAISS index
+        self.ee.build_faiss_index(combined)
+        
+        # Verify final state
+        self.assertEqual(combined.shape, (3, 400))
+        self.assertEqual(self.ee.index.ntotal, 3)
+
+class TestEdgeCases(unittest.TestCase):
+    """Test edge cases and boundary conditions"""
+    
+    def setUp(self):
+        self.ee = EmbeddingEngineer(sbert_model_name="test-model")
+        self.ee._model = Mock()
+    
+    def test_single_sample_embedding(self):
+        """Test embedding single sample"""
+        texts = ["Single text"]
+        self.ee._model.encode.return_value = np.array([[0.1] * 384])
+        
+        result = self.ee.embed_texts(texts)
+        
+        self.assertEqual(result.shape, (1, 384))
+    
+    def test_combine_features_single_sample(self):
+        """Test combining features for single sample"""
+        text_emb = np.array([[0.1] * 384])
+        meta_feat = np.array([[1] * 16])
+        
+        result = self.ee.combine_features(text_emb, meta_feat)
+        
+        self.assertEqual(result.shape, (1, 400))
+    
+    def test_large_batch_embedding(self):
+        """Test embedding large batch of texts"""
+        texts = [f"Text {i}" for i in range(1000)]
+        self.ee._model.encode.return_value = np.random.rand(1000, 384)
+        
+        result = self.ee.embed_texts(texts)
+        
+        self.assertEqual(result.shape, (1000, 384))
+    
+    def test_very_long_text(self):
+        """Test embedding very long text"""
+        long_text = "word " * 1000  # Very long text
+        self.ee._model.encode.return_value = np.array([[0.1] * 384])
+        
+        result = self.ee.embed_texts([long_text])
+        
+        self.assertEqual(result.shape, (1, 384))
+    
+    def test_empty_text(self):
+        """Test embedding empty string"""
+        texts = [""]
+        self.ee._model.encode.return_value = np.array([[0.0] * 384])
+        
+        result = self.ee.embed_texts(texts)
+        
+        self.assertEqual(result.shape, (1, 384))
+    
+    def test_special_characters_in_text(self):
+        """Test embedding text with special characters
+        - google form applications often have emojis """
+        texts = ["Hello! @#$% 123 😀"]
+
+        self.ee._model.encode.return_value = np.array([[0.1] * 384])
+        
+        result = self.ee.embed_texts(texts)
+        
+        self.assertEqual(result.shape, (1, 384))
 
 if __name__ == '__main__':
     unittest.main()
 
 
-# TODO: TestFAISSIndex
-# TODO: TestIntegration
+
 # TODO: TestSaveLoadEmbedding
 # TODO: TestSaveSaveEmbedding

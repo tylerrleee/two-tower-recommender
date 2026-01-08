@@ -116,8 +116,17 @@ class EmbeddingEngineer:
         """
         Builds a Flat Inner Product index for Cosine Similarity search
 
+        Note: OpemMP threads causes segmentation fault
+         - FAISS compiles with IntelOpenMP, whereas the local system (Apple) uses a different process
+         - Hence, causes runtime conflict, then segfault
+
+        IndexFlatIP:
+        - Why don't we normalize the embeddings?
+        1. The metadata is alredy normalized in features.py using StandardScaler
+        2. The text_data is normalized through embed_text() using S-BERT model
         """
         # get dimensions
+        #combined_embeddings_norm = faiss.normalize_L2(combined_embeddings)
         dimensions = combined_embeddings.shape[1]
         self.index = faiss.IndexFlatIP(dimensions)
 
@@ -129,9 +138,11 @@ class EmbeddingEngineer:
          """
          Find the top_k most similar vectors to query
          """
-         if not hasattr(self, 'index'):
+         if not hasattr(self.index, 'search'):
             raise RuntimeError("Index not built. Call build_faiss_index first.")     
-
+         if self.index is None:
+            raise RuntimeError("Index not built. Call build_faiss_index first.")   
+         
          query_vector = query_vector.astype('float32')    
 
          distances, indices = self.index.search(query_vector, top_k)
