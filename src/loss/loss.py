@@ -60,13 +60,9 @@ class DiversityLoss(nn.Module):
         )
 
         return total_loss, compatability_loss, diversity_loss
-    
-    def forward_test(self,
-                     mentor_emb,
-                     mentee_emb,
-                     mentee_diversity_features: bool = None):
-        """
-        Inspired by PAir Wise ranking loss: 
-        - https://gombru.github.io/2019/04/03/ranking_loss/
-        TODO
-        """
+
+
+
+# TODO:
+## Test between cross entropy loss with stochastic gradient descent (SGD) optimization from Soudry et al.
+## multi-class linear approximation of the margins as an alternative loss function

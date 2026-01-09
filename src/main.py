@@ -23,6 +23,7 @@ from src.model.model            import TwoTowerModel
 from src.train.train            import MentorMenteeDataset, train_epoch
 from src.matcher.matcher        import GroupMatcher
 from src.loss.loss              import DiversityLoss
+from src.loss.pairwise_margin_loss import PairwiseMarginLoss
 
 import config
 import traceback
@@ -230,24 +231,36 @@ class End2EndMatching:
                                     shuffle=True) 
         optimizer = torch.optim.Adam(self.model.parameters(), 
                                      lr = learning_rate)
+        # InfoCES loss
+        """
         criterion = DiversityLoss(
             compatibility_weight=0.7,
             diversity_weight=0.3,
             temperature=0.1
         )
+        """
+        
+        criterion = PairwiseMarginLoss(
+            margin=0.2,
+            similarity="cosine"
+        )
+
+    
 
         print("Starting training...")
         # Batch Norm updated running statistics + Dropout layers perform random drop out on input 
         self.model.train() 
 
         for epoch in range(num_epochs):
-            avg_loss = train_epoch(model        = self.model, 
+            avg_loss, metrics = train_epoch(model        = self.model, 
                                    dataloader   = dataLoader,
                                    optimizer    = optimizer,
                                    criterion    = criterion,
-                                   device       = device)
+                                   device       = device,
+                                   loss_type = 'margin')
             # We could use 
             print(f"Epoch {epoch+1}/{num_epochs} - Loss: {avg_loss:.4f}")
+            print(f"Metrics: {metrics}")
         print("Training completed!")
 
         save_path = f"model_checkpoint_epoch{num_epochs}.pt"

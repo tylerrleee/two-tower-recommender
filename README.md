@@ -52,6 +52,16 @@ TODO
 
 TODO
 
+## Next step
+
+Formalize mentor-centric margin loss
+
+Add group-level diversity surrogate
+
+Implement evaluation harness
+
+Run controlled experiments
+
 ## Diversity Loss Equation
 
 ```math
