@@ -26,31 +26,20 @@ class DiversityLoss(nn.Module):
             positive_pairs,
             mentee_diversity_features = None
     ):
-        """
-        Args:
-            :param mentor_emb: (batch_size, embedding_dim)
-            :param mentee_emb: (batch_size, embedding_dim)
-            :param positive_pairs: (batch_size,) - indices of positive mentor-mentee pairs
-            :param mentee_diversity_features:  (batch_size, diversity_dim) - features like extroversion
-        
-        Returns:
-            Total Loss
-            Compatibility Loss
-            Diversity Loss
-        """
+
         # 1. Compatiblity loss 
         # A * B^T / temperature
         similarity_matrix = torch.matmul(mentor_emb, mentee_emb.T) / self.temperature
         
         # Create labels for positive pairs
-        labels = torch.arange(similarity_matrix.size(0), device=similarity_matrix.device)
-
+        labels = positive_pairs.to(similarity_matrix.device)
+        
         # Cross Entropy Loss (infoNCE)
         compatability_loss = F.cross_entropy(similarity_matrix, labels)
 
         # 2. Diversity Loss (mentees should be diverse)
         diversity_loss = 0
-        if mentee_diversity_features:
+        if mentee_diversity_features is not None:
             # Compute pairwise diversity (-cosine sim)
             mentee_sim = torch.matmul(
                 F.normalize(mentee_diversity_features, dim=1),
@@ -71,3 +60,13 @@ class DiversityLoss(nn.Module):
         )
 
         return total_loss, compatability_loss, diversity_loss
+    
+    def forward_test(self,
+                     mentor_emb,
+                     mentee_emb,
+                     mentee_diversity_features: bool = None):
+        """
+        Inspired by PAir Wise ranking loss: 
+        - https://gombru.github.io/2019/04/03/ranking_loss/
+        TODO
+        """

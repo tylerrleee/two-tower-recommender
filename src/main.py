@@ -429,7 +429,7 @@ def main():
     """
     DATA_PATH   = "./vso_ratataou_ace_mock_data.csv"
     SBERT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-    TRAIN_MODEL = False
+    TRAIN_MODEL = True
     USE_FAISS   = False 
 
     # Training model
