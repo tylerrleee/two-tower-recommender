@@ -105,3 +105,158 @@ def train_epoch(model, dataloader, optimizer, criterion, device, loss_type: str=
         }
         
         return avg_loss, metrics
+
+def validate_epoch(model, dataloader, criterion, device, loss_type='margin'):
+    """
+    Validate model for one epoch.
+    
+    Args:
+        model: The two-tower model
+        dataloader: Validation DataLoader
+        criterion: Loss function
+        device: torch.device
+        loss_type: 'diversity' or 'margin'
+    
+    Returns:
+        avg_loss: Average validation loss
+        metrics: Dictionary with additional metrics
+    """
+    model.eval()
+    total_loss = 0
+    total_comp_loss = 0
+    total_div_loss = 0
+    num_batches = 0
+    
+    with torch.no_grad():
+        for batch in dataloader:
+            mentor_feat = batch['mentor'].to(device)
+            mentee_feat = batch['mentee'].to(device)
+            mentee_div  = batch['mentee_div'].to(device)
+            labels      = batch['pair_idx'].to(device)
+
+            # Forward pass
+            _, mentor_emb, mentee_emb = model(mentor_feat, mentee_feat)
+
+            # Compute Loss
+            if loss_type == 'diversity':
+                loss, comp_loss, div_loss = criterion(
+                    mentor_emb=mentor_emb,
+                    mentee_emb=mentee_emb,
+                    positive_pairs=labels,
+                    mentee_diversity_features=mentee_div
+                )
+                total_comp_loss += comp_loss.item()
+                total_div_loss += div_loss.item()
+                
+            elif loss_type == 'margin':
+                loss = criterion(
+                    mentor_emb=mentor_emb,
+                    mentee_emb=mentee_emb,
+                    positive_pairs=labels
+                )
+
+            total_loss += loss.item()
+            num_batches += 1
+
+    avg_loss = total_loss / num_batches
+    
+    metrics = {'avg_loss': avg_loss}
+    
+
+    metrics['avg_comp_loss'] = total_comp_loss / num_batches
+    metrics['avg_div_loss'] = total_div_loss / num_batches
+    
+    return avg_loss, metrics
+
+def train_model_with_validation(
+    model, 
+    train_loader, 
+    val_loader,
+    criterion,
+    optimizer,
+    device,
+    num_epochs=10,
+    loss_type='margin',
+    early_stopping_patience=5
+):
+    """
+    Full training loop with validation and early stopping
+    
+    Args:
+        model: Two-tower model
+        train_loader: Training DataLoader
+        val_loader: Validation DataLoader
+        criterion: Loss function
+        optimizer: Optimizer
+        device: torch.device
+        num_epochs: Number of training epochs
+        loss_type: 'diversity' or 'margin'
+        early_stopping_patience: Stop if no improvement for N epochs
+    
+    Returns:
+        history: Dictionary with training history
+    """
+    history = {
+        'train_loss': [],
+        'val_loss': [],
+        'train_metrics': [],
+        'val_metrics': []
+    }
+    
+    best_val_loss = float('inf')
+    patience_counter = 0
+    
+    for epoch in range(num_epochs):
+        # Training
+        train_loss, train_metrics = train_epoch(
+            model=model,
+            dataloader=train_loader,
+            optimizer=optimizer,
+            criterion=criterion,
+            device=device,
+            loss_type=loss_type
+        )
+        
+        # Validation
+        val_loss, val_metrics = validate_epoch(
+            model=model,
+            dataloader=val_loader,
+            criterion=criterion,
+            device=device,
+            loss_type=loss_type
+        )
+        
+        # Store history
+        history['train_loss'].append(train_loss)
+        history['val_loss'].append(val_loss)
+        history['train_metrics'].append(train_metrics)
+        history['val_metrics'].append(val_metrics)
+        
+        # Print progress
+        print(f"Epoch {epoch+1}/{num_epochs}")
+        print(f"  Train Loss: {train_loss:.4f}")
+        print(f"  Val Loss:   {val_loss:.4f}")
+        
+
+        print(f"  Train Comp: {train_metrics['avg_comp_loss']:.4f}, "
+                  f"Div: {train_metrics['avg_div_loss']:.4f}")
+        print(f"  Val Comp:   {val_metrics['avg_comp_loss']:.4f}, "
+                  f"Div: {val_metrics['avg_div_loss']:.4f}")
+        
+        # Early stopping
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            patience_counter = 0
+            # Save best model
+            torch.save(model.state_dict(), 'best_model.pt')
+            print(f" New best model saved!")
+        else:
+            patience_counter += 1
+            if patience_counter >= early_stopping_patience:
+                print(f"\nEarly stopping triggered after {epoch+1} epochs")
+                break
+    
+    # Load best model
+    model.load_state_dict(torch.load('best_model.pt'))
+    
+    return history
