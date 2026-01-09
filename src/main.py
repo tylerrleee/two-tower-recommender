@@ -17,13 +17,15 @@ import numpy as np
 import pandas as pd
 import torch
 
-from features import FeatureEngineer
-from embedding import EmbeddingEngineer
-from model import TwoTowerModel
-from train import MentorMenteeDataset, train_epoch
-from matcher import GroupMatcher
-from loss import DiversityLoss
+from src.features.features      import FeatureEngineer
+from src.embedding.embedding    import EmbeddingEngineer
+from src.model.model            import TwoTowerModel
+from src.train.train            import MentorMenteeDataset, train_epoch
+from src.matcher.matcher        import GroupMatcher
+from src.loss.loss              import DiversityLoss
+
 import config
+import traceback
 
 class End2EndMatching:
     def __init__(
@@ -31,7 +33,7 @@ class End2EndMatching:
             data_path: str,
             sbert_pretrained_model: str = "sentence-transformers/all-MiniLM-L6-v2",
             use_pretrained_model: bool  = False,
-            embedding_dimensions:       int = None,
+            embedding_dimensions:   int = 384,
             model_checkpoint_path: str  = None
             ):
         """
@@ -50,13 +52,13 @@ class End2EndMatching:
         self.embedding_dimensions   = embedding_dimensions
 
         # COMPONENTS
-        self.feature_engineer   = None
-        self.embedding_engineer = None
-        self.model              = None
-        self.matcher            = None
+        self.feature_engineer: FeatureEngineer      = None
+        self.embedding_engineer: EmbeddingEngineer  = None
+        self.model: TwoTowerModel                   = None
+        self.matcher: GroupMatcher                  = None
 
         # STORAGE
-        self.df                 = None
+        self.df: pd.DataFrame   = None
         self.mentor_data        = None
         self.mentee_data        = None
         self.mentor_embedding   = None
@@ -76,11 +78,13 @@ class End2EndMatching:
         Assuming there should be 2 mentees for every 1 mentor
         """
         self.df = pd.read_csv(self.data_path)
+        self.df = FeatureEngineer.rename_column(self.df, config.RENAME_MAP)
+
         print(f"Loaded {len(self.df)} total applicants")
 
         # TODO change logic for classifying bigs and little
-        self.df_mentors = self.df[self.df['Role (0=Big,1=Little)'] == 0].copy()
-        self.df_mentees = self.df[self.df['Role (0=Big,1=Little)'] == 1].copy()
+        self.df_mentors = self.df[self.df['role'] == 0].copy()
+        self.df_mentees = self.df[self.df['role'] == 1].copy()
 
         print(f"Mentors: {len(self.df_mentors)}")
         print(f"Mentees: {len(self.df_mentees)}") 
@@ -122,7 +126,7 @@ class End2EndMatching:
         self.feature_engineer.fit(df = self.df, rename_map=config.RENAME_MAP)
 
         # Transform for each role
-        self.mentee_data = self.feature_engineer.transform(self.df_mentees)
+        self.mentor_data = self.feature_engineer.transform(self.df_mentors)
         print(f"Mentor profile texts: {self.mentor_data['profile_text'].shape}")
         print(f"Mentor meta features: {self.mentor_data['meta_features'].shape}")
 
@@ -152,11 +156,14 @@ class End2EndMatching:
             text_features=self.mentee_data['profile_text'],
             meta_features=self.mentee_data['meta_features']
         )
-        print(f"Mentee embeddings shape: {self.mentee_embeddings.shape}")
+        print(f"Mentee embeddings shape: {self.mentee_embedding.shape}")
 
         return self
 
     def initialize_model(self):
+
+        self.embedding_dimensions = self.embedding_dimensions
+
         meta_feature_dim = self.mentor_embedding.shape[1] - self.embedding_dimensions
 
         print(f"Text embedding dim: {self.embedding_dimensions}")
@@ -286,7 +293,7 @@ class End2EndMatching:
         """
 
         # If model was trained, otherwise use raw embeddings
-        if hasattr(self, 'mentee_embeddings_learned'):
+        if self.mentee_embeddings_learned is not None and self.mentor_embeddings_learned is not None:
             mentor_emb = self.mentor_embeddings_learned
             mentee_emb = self.mentee_embeddings_learned
         else:
@@ -300,10 +307,15 @@ class End2EndMatching:
             diversity_weight=0.4
         )
 
-        # Choose matching algo
+        # Matching
+        assert mentor_emb is not None
+        assert mentee_emb is not None
+        assert mentor_emb.ndim == 2
+        assert mentee_emb.ndim == 2
+
         if use_faiss:
             self.groups = self.matcher.find_best_groups_faiss(
-                mentee_emb  =   mentor_emb,
+                mentor_emb  =   mentor_emb,
                 mentee_emb  =   mentee_emb,
                 top_k       =   top_k
             )
@@ -313,19 +325,28 @@ class End2EndMatching:
                 mentee_emb  =   mentee_emb
             )
         print(f"Created {len(self.groups)} mentor-mentee groups")
+
         return self
 
     def set_output_result(self):
         """
         Format groups in readable format
         """
+
+        # Check if our target columns exist
+        expected_cols = {'name', 'major', 'year', 'ufl_email'}
+        missing = expected_cols - set(self.df_mentors.columns)
+        #print(self.df_mentors.columns)
+        assert not missing, f"Missing columns: {missing}"
+
+
         results = []
 
         for mentor_idx, group_info in self.groups.items():
             # Get mentor info - assuming all names are unique (for now)
             mentor_row      = self.df_mentors.iloc[mentor_idx]
-            mentor_name     = mentor_row['Name']
-            mentor_major    = mentor_row['Major']
+            mentor_name     = mentor_row['name']
+            mentor_major    = mentor_row['major']
 
             # Get mentee info
             mentee_indices  = group_info['mentees']
@@ -336,9 +357,9 @@ class End2EndMatching:
             for mentee_idx in mentee_indices:
                 mentee_row = self.df_mentees.iloc[mentee_idx]
                 mentees_info.append({
-                    'name': mentee_row['Name'],
-                    'major': mentee_row['Major'],
-                    'year': mentee_row['Year']
+                    'name': mentee_row['name'],
+                    'major': mentee_row['major'],
+                    'year': mentee_row['year']
                 })
             
             avg_compatibility = float(group_info['total_compatibility_score'] / len(mentee_indices))
@@ -364,26 +385,29 @@ class End2EndMatching:
     
     def display_results(self):
         """
-        Command line display on matching results, referencing outputs results from set_output_result()
-
+        Command line display on matching results, referencing outputs from set_output_result()
         """
         print("=" * 60)
         print("MENTOR-MENTEE GROUP RECOMMENDATIONS")
         print("=" * 60)
 
         for i, result in enumerate(self.results, 1):
-            print(f"\n Group {i} Compatbility Score: {result['compatbility_score']:.2f}")
+            print(f"\nGroup {i} | Compatibility Score: {result['compatibility_score']:.2f}")
             print(f"Mentor: {result['mentor']['name']} ({result['mentor']['major']})")
-            print(f'Email: {result['mentor']['email']}')
+            print(f"Email: {result['mentor']['email']}")
 
-            for j, mentee in enumerate(result['mentees']):
-                score = result['invididual_scores'][j]
-                print(f" {j}. {mentee['name']} \
-                        - Year: {mentee['year']} \
-                        - Major: ({mentee['major']} \
-                        - Score: {score:.3f}")
+            for j, (mentee, score) in enumerate(
+                zip(result['mentees'], result['individual_scores']), start=1
+            ):
+                print(
+                    f" {j}. {mentee['name']} "
+                    f"- Year: {mentee['year']} "
+                    f"- Major: {mentee['major']} "
+                    f"- Score: {score:.3f}"
+                )
 
         return self
+
 
 
     def save_results(self, output_dir: str):
@@ -403,14 +427,56 @@ def main():
     4. Initialize model | with & w/o FAISS index for tests
     5. Training pipeline (optional)
     """
-        
+    DATA_PATH   = "./vso_ratataou_ace_mock_data.csv"
+    SBERT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+    TRAIN_MODEL = False
+    USE_FAISS   = False 
 
+    # Training model
+    NUMB_EPOCHS   = 10
+    BATCH_SIZE    = 32
+    LEARNING_RATE = 1e-3
+
+
+    pipeline = End2EndMatching(
+        data_path               =DATA_PATH,
+        sbert_pretrained_model  =SBERT_MODEL,
+        use_pretrained_model    = False
+    )
+
+    try:
+        pipeline.load_csv_data()       
+        pipeline.engineer_features()   
+        pipeline.generate_embeddings()
+        pipeline.initialize_model()
+
+        if TRAIN_MODEL:
+            pipeline.train_model(
+                num_epochs      =NUMB_EPOCHS,
+                batch_size      =BATCH_SIZE,
+                learning_rate   =LEARNING_RATE
+            )
+            pipeline.generate_mentor_embeddings()
+
+        pipeline.match_groups(use_faiss=USE_FAISS)
+        pipeline.set_output_result()
+        pipeline.save_results(output_dir='output')
+        pipeline.display_results()
+
+        print("\n" + "=" * 60)
+        print("Pipeline completed successfully!")
+        print("=" * 60)
+
+    except Exception as e:
+        print(f"\nError occurred: {str(e)}")
+        traceback.print_exc()
 # TODO import logging and replace all print statements - 
 # TODO Test at different DiversityLoss weights - training
 # TODO Test parallel loading w/ num_workers - training
 
         
-
+if __name__ == "__main__":
+    main()
 
 
 

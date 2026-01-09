@@ -22,9 +22,9 @@ class FeatureEngineer:
             categorical_fields: Optional[list[str]] = None,
             numeric_fields: Optional[List[str]]     = None
     ):
-        self.profile_text      : dict = profile_text
-        self.categorical_fields: dict = categorical_fields
-        self.numeric_fields    : dict = numeric_fields
+        self.profile_text      : List[str] = profile_text
+        self.categorical_fields: List[str] = categorical_fields
+        self.numeric_fields    : List[str] = numeric_fields
         self.rename_map        : dict = None
         # ColumnTransformer Fit
         self.column_transformer: Optional[ColumnTransformer] = None
@@ -108,20 +108,24 @@ class FeatureEngineer:
             A new copy of cleaned DataFrame
         """
         # Shallow Copy?
-        df_copy = df.copy()
+        df = df.copy()
         
-        # Standardize all columns to str
-        for col in df_copy.columns:
-            # Fill empty fields with empty string + str cast
-            df_copy[col] = df_copy[col].fillna("").astype(str)
-        
-        # Numeric coercion for numeric fields
+        # Standardize categorical fields
+        for col in self.categorical_fields:
+            if col in df.columns:
+                df[col] = (
+                    df[col]
+                    .fillna(np.nan)  # For OntHotEncoding to handle NaN values, where it uses np.isnan()
+                    .astype(str)
+                    .str.strip()
+                )
+
+        # Standardize Numerical Fields
         for col in self.numeric_fields:
-            if col in df_copy.columns:
-                # Cast integer if possible, else NaN upon TypeError
-                df_copy[col] = pd.to_numeric(df_copy[col], errors='coerce', downcast='float')
-                df_copy[col] = df_copy[col].fillna(0).astype(float)
-        return df_copy
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+
+        return df
 
     def fit(self, df: pd.DataFrame,  rename_map: Optional[dict]):
         """
@@ -154,7 +158,7 @@ class FeatureEngineer:
         ##categorical_fields : One Hot Encoidng
         available_category = [c for c in self.categorical_fields if c in df.columns]
         if available_category:
-            ohe = OneHotEncoder(handle_unknown='error', sparse_output=False)
+            ohe = OneHotEncoder(handle_unknown='ignore', sparse_output=False)
             transformers.append(("OneHot" , ohe, available_category))
 
         ## numeric_fields : StandardScaler | Mean=0, Var=1 
@@ -183,14 +187,10 @@ class FeatureEngineer:
         if not self.fitted or self.column_transformer is None:
             raise RuntimeError("Features must be fitted before transform(). Call fit() first.")
         
-        # Reduncdant - Since we are doing the fitting first, these are repeated
-        #df = self.rename_column(df)
-        #df = self._clean_table(df)
-        #df['profile_text'] = self.build_profile_text(df, self.profile_text)
-        
-        # print("Our current DataFrame", df.head())
         if self.rename_map:
             df = self.rename_column(df, self.rename_map)
+
+        df = self._clean_table(df)
 
         df['profile_text'] = self.build_profile_text(df, self.profile_text)
         
@@ -214,7 +214,7 @@ class FeatureEngineer:
             'raw_df': df
         }
     def fit_transform(self, df: pd.DataFrame) -> Dict[str, np.ndarray]:
-        self.fit(df)
+        self.fit(df, self.rename_map)
         return self.transform(df)
 
     def compute_diversity_features(self, df: pd.DataFrame) -> np.ndarray:
@@ -229,7 +229,7 @@ class FeatureEngineer:
         diversity_features = []
 
         # Extroversion complementary 
-        extro_complement = 1.0 - np.abs(df['extroversion'] - 0.5)
+        extro_complement = 1.0 - np.abs((df['extroversion'] - 3) / 2)
         diversity_features.append(extro_complement)
 
         # Study Social Balance

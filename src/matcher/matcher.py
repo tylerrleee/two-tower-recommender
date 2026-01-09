@@ -52,9 +52,11 @@ class GroupMatcher:
                     'individual_scores': [],
                     'total_compatibility_score': 0
                 }
+                # Example Output: {'mentees': [869, 371], 'individual_scores': [5.903554439544678, 5.370003700256348], 'total_compatibility_score': 11.273558139801025})])
             groups[real_mentor_index]['mentees'].append(int(mentee_index))
             groups[real_mentor_index]['individual_scores'].append(float(match_score))
             groups[real_mentor_index]['total_compatibility_score'] += float(match_score)
+
         return groups
     
 
@@ -70,9 +72,6 @@ class GroupMatcher:
         Returns:
             groups: List of (mentor_index, [mentee_index1, mentee_index2])
         """
-
-        n_mentors = len(mentor_emb)
-        n_mentees = len(mentee_emb)
 
         # Duplicate mentors sos each has 2 'slots' for mentees
         expanded_mentor_emb = np.repeat(mentor_emb, 2, axis=0)
@@ -127,7 +126,7 @@ class GroupMatcher:
         # 3. Optimization step
         mentor_indices, mentee_indices = linear_sum_assignment(sparse_cost_matrix, maximize=True)
         
-        return self._format_results(mentor_indices=mentee_indices, 
+        return self._format_results(mentor_indices=mentor_indices, 
                                     mentee_indices=mentee_indices, 
                                     cost_matrix=sparse_cost_matrix)
 
