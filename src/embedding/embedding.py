@@ -3,6 +3,7 @@ import numpy as np
 import os
 from typing import Optional, List
 import faiss
+from scipy.optimize import linear_sum_assignment
 
 
 class EmbeddingEngineer:
@@ -110,6 +111,7 @@ class EmbeddingEngineer:
     def load_embedding(self, path: str, file: str = "embeddings.npy"):
         return np.load(os.path.join(path,file))
     
+
 
     # Build Faiss Index for Cosine Similarity
     def build_faiss_index(self, combined_embeddings: np.ndarray):

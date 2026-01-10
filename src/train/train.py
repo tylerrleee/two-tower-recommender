@@ -29,6 +29,7 @@ class MentorMenteeDataset(Dataset):
             'pair_idx': self.positive_pairs[index]
         }
     
+    
 def train_epoch(model, dataloader, optimizer, criterion, device, loss_type: str='margin'):
     """
     Train for one epoch with flexible loss function support.
@@ -43,7 +44,12 @@ def train_epoch(model, dataloader, optimizer, criterion, device, loss_type: str=
     
     Returns:
         avg_loss: Average loss for the epoch
-        metrics: Dictionary with additional metrics (comp_loss, div_loss if applicable)
+        metrics: Dictionary with additional metrics 
+            avg_loss: primary metric used for backpropagation. It is the average of the total loss across all batches.
+
+            avg_comp_loss (Compatibility): tracks how well the pairs fit together purely based on preference/similarity, ignoring the diversity penalty.
+
+            avg_div_loss (Diversity): tracks the penalty applied for selecting cohorts that are too homogeneous (lack diversity).   
     """
     
     model.train()
@@ -121,12 +127,15 @@ def validate_epoch(model, dataloader, criterion, device, loss_type='margin'):
         avg_loss: Average validation loss
         metrics: Dictionary with additional metrics
     """
+    # Disable Dropout 
     model.eval()
+
     total_loss = 0
     total_comp_loss = 0
     total_div_loss = 0
     num_batches = 0
     
+    # Prevent model from updating weights
     with torch.no_grad():
         for batch in dataloader:
             mentor_feat = batch['mentor'].to(device)
@@ -243,7 +252,8 @@ def train_model_with_validation(
         print(f"  Val Comp:   {val_metrics['avg_comp_loss']:.4f}, "
                   f"Div: {val_metrics['avg_div_loss']:.4f}")
         
-        # Early stopping
+        # Early stopping - after X patience, the training stops as we see no improvement, and to prevent overfitting
+        ## TODO default 5, but we need to test at different numbers to see where overfitting occurs
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             patience_counter = 0

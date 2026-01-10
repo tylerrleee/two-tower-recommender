@@ -19,8 +19,10 @@ import torch
 
 from src.features.features      import FeatureEngineer
 from src.embedding.embedding    import EmbeddingEngineer
+from src.embedding.boostrap_positive_pairs    import bootstrap_positive_pairs_from_embeddings
+
 from src.model.model            import TwoTowerModel
-from src.train.train            import MentorMenteeDataset, train_epoch
+from src.train.train            import MentorMenteeDataset, train_epoch, train_model_with_validation
 from src.matcher.matcher        import GroupMatcher
 from src.loss.loss              import DiversityLoss
 from src.loss.pairwise_margin_loss import PairwiseMarginLoss
@@ -189,85 +191,110 @@ class End2EndMatching:
 
         return self
 
-    def train_model(self, num_epochs: int, batch_size: int, learning_rate: float):
-        """
-        Training the model
-
+    def train_model(self, 
+                    num_epochs: int, 
+                    batch_size: int, 
+                    learning_rate: float, 
+                    loss_type: str = 'margin'):
+        '''
+        Training the model with loss function 
+        
         Args:
             num_epochs: Number of training epochs
-            batch_sizes: batch size for training
+            batch_size: Batch size for training
             learning_rate: Learning rate for optimizer
-        
-        """
+            loss_type: 'margin' or 'diversity' - which loss function to use
+        '''
         print(f"Epochs: {num_epochs}, Batch size: {batch_size}, LR: {learning_rate}")
+        print(f"Loss type: {loss_type}")
 
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         # Get synthetic positive pairs
-        n_mentors    = len(self.mentor_embedding)
-        n_mentees    = len(self.mentee_embedding)
-        n_pairs      = min(n_mentees, n_mentors)
-
-        pos_pairs    = np.arange(n_pairs)
+        n_mentors = len(self.mentor_embedding)
+        n_mentees = len(self.mentee_embedding)
         
+        n_pairs = min(n_mentees, n_mentors)
+
+        # Synthetic Pairng [1, 2, 3,...n]
+        #pos_pairs = np.arange(n_pairs)
+        pos_pairs = bootstrap_positive_pairs_from_embeddings(
+            mentor_embeddings=self.mentor_embedding,
+            mentee_embeddings=self.mentee_embedding,
+            top_k=5,
+            method='hungarian'
+        )
         # Compute diversity features 
         mentee_diversity = self.feature_engineer.compute_diversity_features(
-            df = self.df_mentees.head(n_pairs) # Compute for n_pairs of mentees
+            df=self.df_mentees.head(n_pairs)
         )
+        mentor_diversity = np.zeros((n_pairs, mentee_diversity.shape[1]))
 
-        mentor_diversity = np.zeros((n_pairs, mentee_diversity.shape[1])) # Dummy
- 
-        # Create dataset 
+        # Create dataset
         dataset = MentorMenteeDataset(
-            mentee_features     =   self.mentee_embedding[:n_pairs],
-            mentor_features     =   self.mentor_embedding[:n_pairs],
-            mentee_diversity    =   mentee_diversity, 
-            mentor_diversity    =   mentor_diversity,
-            positive_pairs      =   pos_pairs
+            mentee_features=self.mentee_embedding[:n_pairs],
+            mentor_features=self.mentor_embedding[:n_pairs],
+            mentee_diversity=mentee_diversity, 
+            mentor_diversity=mentor_diversity,
+            positive_pairs=pos_pairs
         )
 
-        dataLoader = torch.utils.data.DataLoader(dataset = dataset,  
-                                    batch_size=batch_size,
-                                    shuffle=True) 
-        optimizer = torch.optim.Adam(self.model.parameters(), 
-                                     lr = learning_rate)
-        # InfoCES loss
-        """
-        criterion = DiversityLoss(
-            compatibility_weight=0.7,
-            diversity_weight=0.3,
-            temperature=0.1
+        # Split into train/val (80/20)
+
+        train_size = int(0.80 * len(dataset))
+        val_size = len(dataset) - train_size
+        train_dataset, val_dataset = torch.utils.data.random_split(
+            dataset, [train_size, val_size]
         )
-        """
+
+        # Load Data in randomized batches 
+        train_loader = torch.utils.data.DataLoader(
+            train_dataset, batch_size=batch_size, shuffle=True
+        )
+        val_loader = torch.utils.data.DataLoader(
+            val_dataset, batch_size=batch_size, shuffle=False
+        )
+
+        # Intialize Adam Optimizer
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
         
-        criterion = PairwiseMarginLoss(
-            margin=0.2,
-            similarity="cosine"
-        )
-
-    
+        # Choose loss function
+        if loss_type == 'margin':
+            criterion = PairwiseMarginLoss(margin=0.2, 
+                                           similarity="cosine")
+        elif loss_type == 'diversity':
+            criterion = DiversityLoss(
+                compatibility_weight=0.7,
+                diversity_weight=0.3,
+                temperature=0.1
+            )
+        else:
+            raise ValueError(f"Unknown loss_type: {loss_type}")
 
         print("Starting training...")
-        # Batch Norm updated running statistics + Dropout layers perform random drop out on input 
-        self.model.train() 
+        self.model.train()
 
-        for epoch in range(num_epochs):
-            avg_loss, metrics = train_epoch(model        = self.model, 
-                                   dataloader   = dataLoader,
-                                   optimizer    = optimizer,
-                                   criterion    = criterion,
-                                   device       = device,
-                                   loss_type = 'margin')
-            # We could use 
-            print(f"Epoch {epoch+1}/{num_epochs} - Loss: {avg_loss:.4f}")
-            print(f"Metrics: {metrics}")
+        # Use the improved training loop
+        history = train_model_with_validation(
+            model=self.model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            criterion=criterion,
+            optimizer=optimizer,
+            device=device,
+            num_epochs=num_epochs,
+            loss_type=loss_type,
+            early_stopping_patience=5
+        )
+
         print("Training completed!")
 
-        save_path = f"model_checkpoint_epoch{num_epochs}.pt"
+        save_path = f"model_checkpoint_{loss_type}_epoch{num_epochs}.pt"
         torch.save(self.model.state_dict(), save_path)
         print(f"Model saved to: {save_path}")
 
-        return self
+        return self, history
+    
 
     def generate_mentor_embeddings(self):
         """
