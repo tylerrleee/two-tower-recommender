@@ -11,11 +11,14 @@ Docstring for two-tower-recommender.main
 
 Note:
 - return self on methods without a return value for chaining purposes
+- Type hinting follows the PEP 589 - TypeDict | https://peps.python.org/pep-0589/
 """
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 import torch
+from typing import Optional, Dict, List, Any, TypedDict, Tuple
 
 from features      import FeatureEngineer
 from embedding    import EmbeddingEngineer
@@ -30,6 +33,52 @@ from pairwise_margin_loss import PairwiseMarginLoss
 import config
 import traceback
 
+# Type definitions for structured data
+class TransformedFeatures(TypedDict):
+    """Output from FeatureEngineer.transform()"""
+    profile_text: npt.NDArray[np.str_]
+    meta_features: npt.NDArray[np.float64]
+    index: npt.NDArray[np.int64]
+    raw_df: pd.DataFrame
+
+
+class GroupInfo(TypedDict):
+    """Matching result for a single mentor-mentee group"""
+    mentees: List[int]
+    individual_scores: List[float]
+    total_compatibility_score: float
+
+
+class MentorInfo(TypedDict):
+    """Mentor metadata for final output"""
+    name: str
+    major: str
+    email: str
+
+
+class MenteeInfo(TypedDict):
+    """Mentee metadata for final output"""
+    name: str
+    major: str
+    year: str
+
+
+class MatchResult(TypedDict):
+    """Final formatted matching result"""
+    group_id: int
+    mentor: MentorInfo
+    mentees: List[MenteeInfo]
+    compatibility_score: float
+    individual_scores: List[float]
+
+
+class TrainingHistory(TypedDict):
+    """Training history from train_model_with_validation"""
+    train_loss: List[float]
+    val_loss: List[float]
+    train_metrics: List[Dict[str, float]]
+    val_metrics: List[Dict[str, float]]
+
 class End2EndMatching:
     def __init__(
             self,
@@ -38,42 +87,47 @@ class End2EndMatching:
             use_pretrained_model: bool  = False,
             embedding_dimensions:   int = 384,
             model_checkpoint_path: str  = None
-            ):
+            ) -> None:
         """
         Initialize the pipeline
         
         Args:
             data_path: Path to CSV file with applicant data
-            sbert_model: Sentence transformer model name
+            sbert_pretrained_model: Sentence transformer model name
             use_pretrained_model: Whether to load a pre-trained two-tower model
-            model_checkpoint_path: Path to saved model weights
+            embedding_dimensions: Dimension of S-BERT text embeddings (default: 384)
+            model_checkpoint_path: Path to saved model weights (optional)
         """
-        self.data_path              = data_path
-        self.sbert_pretrained_model = sbert_pretrained_model 
-        self.use_pretrained_model   = use_pretrained_model
-        self.model_checkpoint_path  = model_checkpoint_path
-        self.embedding_dimensions   = embedding_dimensions
+        # Configuration
+        self.data_path: str = data_path
+        self.sbert_pretrained_model: str = sbert_pretrained_model 
+        self.use_pretrained_model: bool = use_pretrained_model
+        self.model_checkpoint_path: Optional[str] = model_checkpoint_path
+        self.embedding_dimensions: int = embedding_dimensions
 
         # COMPONENTS
-        self.feature_engineer: FeatureEngineer      = None
-        self.embedding_engineer: EmbeddingEngineer  = None
-        self.model: TwoTowerModel                   = None
-        self.matcher: GroupMatcher                  = None
+        self.feature_engineer: Optional[FeatureEngineer] = None
+        self.embedding_engineer: Optional[EmbeddingEngineer] = None
+        self.model: Optional[TwoTowerModel] = None
+        self.matcher: Optional[GroupMatcher] = None
 
-        # STORAGE
-        self.df: pd.DataFrame   = None
-        self.mentor_data        = None
-        self.mentee_data        = None
-        self.mentor_embedding   = None
-        self.mentee_embedding   = None
-        self.mentee_embeddings_learned = None
-        self.mentor_embeddings_learned = None
+        # STORAGE - Raw DataFrames
+        self.df: Optional[pd.DataFrame] = None
+        self.df_mentors: Optional[pd.DataFrame] = None
+        self.df_mentees: Optional[pd.DataFrame] = None
 
-        # MATCHING
-        self.groups             = None
-        self.results            = None
+        # STORAGE - Transformed Features
+        self.mentor_data: Optional[TransformedFeatures] = None
+        self.mentee_data: Optional[TransformedFeatures] = None
 
-        #TODO cmd print when initialized
+        # STORAGE - Combined Embeddings (S-BERT text + meta features)
+        # Shape: (n_samples, embedding_dim + meta_feature_dim)
+        self.mentor_embedding: Optional[npt.NDArray[np.float32]] = None
+        self.mentee_embedding: Optional[npt.NDArray[np.float32]] = None     
+        # MATCHING - Results
+        self.groups: Optional[Dict[int, GroupInfo]] = None
+        self.results: Optional[List[MatchResult]] = None
+
     
     def load_csv_data(self):
         """
