@@ -1,4 +1,4 @@
-from src.embedding.embedding import EmbeddingEngineer
+from src.embedding import EmbeddingEngineer
 import numpy as np
 import pandas as pd
 import unittest
@@ -53,7 +53,7 @@ class TestModelProperty(unittest.TestCase):
     
     # Any call to SenternceTransformer will return a mock object
     ## so that no model is downloaded, no GPU is used and faster tests
-    @patch('src.embedding.embedding.SentenceTransformer')
+    @patch('src.embedding.SentenceTransformer')
     def test_model_loads_on_first_access(self, mock_sbert):
         """Test model is loaded lazily on first access"""
         mock_model = Mock()
@@ -72,7 +72,7 @@ class TestModelProperty(unittest.TestCase):
         self.assertEqual(model, mock_model)
         self.assertEqual(ee._model, mock_model)
     
-    @patch('src.embedding.embedding.SentenceTransformer')
+    @patch('src.embedding.SentenceTransformer')
     def test_model_loads_only_once(self, mock_sbert):
         """Test model is cached after first load"""
         mock_model = Mock()
@@ -90,7 +90,7 @@ class TestModelProperty(unittest.TestCase):
         self.assertEqual(model1, model2)
         self.assertEqual(model2, model3)
     
-    @patch('src.embedding.embedding.SentenceTransformer')
+    @patch('src.embedding.SentenceTransformer')
     def test_model_handles_type_error(self, mock_sbert):
         """Test model handles TypeError gracefully"""
         mock_sbert.side_effect = TypeError("Model not found")

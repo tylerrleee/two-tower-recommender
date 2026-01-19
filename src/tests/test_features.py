@@ -5,7 +5,7 @@ unittest    : https://docs.python.org/2/library/unittest.html#basic-example
 import unittest
 import pandas as pd
 from pandas.testing import assert_frame_equal
-from src.features.features import FeatureEngineer
+from src.features import FeatureEngineer
 
 # Rename Column
 class TestRenameColumn(unittest.TestCase):

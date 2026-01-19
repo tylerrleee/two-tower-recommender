@@ -41,6 +41,9 @@ class FeatureEngineer:
         """
         df = df.rename(columns = rename_map)
 
+        # Check for duplicate Columns 
+        if df.columns.duplicated().any():
+            raise ValueError("Duplicate column names after lowercasing")
 
         # Perform string casting on all column names, remove trailing space, & lower all names
         # List comprehension handling None values - when users did fill out Rename_Map right
@@ -72,6 +75,17 @@ class FeatureEngineer:
         Return:
             A 1D array or pd.Series that includes our profile_text
         """
+
+        # Validate fields exist
+        missing_fields = set(text_fields) - set(df.columns)
+        if missing_fields:
+            print(f"WARNING: Text fields not found in data: {missing_fields}")
+            text_fields = [f for f in text_fields if f in df.columns]
+        
+        if not text_fields:
+            raise ValueError("No valid text fields available for profile_text")
+        
+        # help join all corpus into a single string w/ string checks
         def join_row(row) -> str:
             """
             Check each row for:
@@ -123,7 +137,10 @@ class FeatureEngineer:
         # Standardize Numerical Fields
         for col in self.numeric_fields:
             if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+                df[col] = pd.to_numeric(df[col], errors="coerce") # Convert to int
+
+                median_val = df[col].median()
+                df[col] = df[col].fillna(median_val) # Replace N/A values with the Median
 
         return df
 

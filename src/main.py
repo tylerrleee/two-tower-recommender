@@ -17,15 +17,15 @@ import numpy as np
 import pandas as pd
 import torch
 
-from src.features.features      import FeatureEngineer
-from src.embedding.embedding    import EmbeddingEngineer
-from src.embedding.boostrap_positive_pairs    import bootstrap_positive_pairs_from_embeddings
+from features      import FeatureEngineer
+from embedding    import EmbeddingEngineer
+from boostrap_positive_pairs    import bootstrap_positive_pairs_from_embeddings
 
-from src.model.model            import TwoTowerModel
-from src.train.train            import MentorMenteeDataset, train_epoch, train_model_with_validation
-from src.matcher.matcher        import GroupMatcher
-from src.loss.loss              import DiversityLoss
-from src.loss.pairwise_margin_loss import PairwiseMarginLoss
+from model            import TwoTowerModel
+from train            import MentorMenteeDataset, train_epoch, train_model_with_validation
+from matcher        import GroupMatcher
+from loss              import DiversityLoss
+from pairwise_margin_loss import PairwiseMarginLoss
 
 import config
 import traceback
@@ -78,14 +78,28 @@ class End2EndMatching:
     def load_csv_data(self):
         """
         Load CSV data and split into mentors and mentees
-        Assuming there should be 2 mentees for every 1 mentor
+        1. Check if required columns exists
         """
+
+        # Data Check
+        required_cols = {'role', 'name', 'major', 'year', 'ufl_email'}
+        missing = required_cols - set(self.df.columns)
+        if missing:
+            raise ValueError(f"CSV missing required columns: {missing}")
+        
+        # Validate role values (0=mentor, 1=mentee)
+        if not self.df['role'].isin([0, 1]).all():
+            raise ValueError("'role' column must contain only 0 (mentor) or 1 (mentee)")
+        
+        # Check for empty DataFrame
+        if len(self.df) == 0:
+            raise ValueError("CSV file is empty")
+        
         self.df = pd.read_csv(self.data_path)
         self.df = FeatureEngineer.rename_column(self.df, config.RENAME_MAP)
 
         print(f"Loaded {len(self.df)} total applicants")
 
-        # TODO change logic for classifying bigs and little
         self.df_mentors = self.df[self.df['role'] == 0].copy()
         self.df_mentees = self.df[self.df['role'] == 1].copy()
 

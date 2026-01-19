@@ -1,12 +1,17 @@
-# Core Python tools
-numpy
-pandas
+# Core Data Processing
+pandas>=2.0.0
+numpy>=1.24.0
+scipy>=1.10.0
 
+# Machine Learning & Embeddings
+torch>=2.0.0
+sentence-transformers>=2.2.0
+scikit-learn>=1.2.0
 
-sentence_transformers
-sklearn.preprocessing
-sklearn.compose
-typing
-faiss-cpu
+# Vector Search & Acceleration
+faiss-cpu>=1.7.0  # CPU
 
- 
+# Utilities + runtime track
+tqdm>=4.65.0
+
+# pip3 install -r requirements.txt
