@@ -30,7 +30,12 @@ class MentorMenteeDataset(Dataset):
         }
     
     
-def train_epoch(model, dataloader, optimizer, criterion, device, loss_type: str='margin'):
+def train_epoch(model, 
+                dataloader,
+                optimizer, 
+                criterion, 
+                device, 
+                loss_type: str='margin'):
     """
     Train for one epoch with flexible loss function support.
     
@@ -51,7 +56,7 @@ def train_epoch(model, dataloader, optimizer, criterion, device, loss_type: str=
 
             avg_div_loss (Diversity): tracks the penalty applied for selecting cohorts that are too homogeneous (lack diversity).   
     """
-    
+
     model.train()
     total_loss = 0
     total_comp_loss = 0
@@ -95,22 +100,32 @@ def train_epoch(model, dataloader, optimizer, criterion, device, loss_type: str=
 
         # Backward Pass
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters()) # Ensure that similar to equal users don't produce an explosive or NaN gradient
+        # Ensure that similar to equal users don't produce an explosive or NaN gradient
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+
         optimizer.step()
 
         total_loss += loss.item()
         num_batches += 1
 
         # Compute averages
+    if num_batches == 0:
+        raise ValueError("Validation Data Loader is empty")
+    else:
         avg_loss = total_loss / num_batches
         
-        metrics = {
-            'avg_loss'      : avg_loss,
-            'avg_comp_loss' : total_comp_loss / num_batches,
-            'avg_div_loss'  : total_div_loss / num_batches
-        }
-        
-        return avg_loss, metrics
+    metrics = {'avg_loss': avg_loss}
+
+    if loss_type == 'diversity':
+        metrics.update({
+            'avg_comp_loss': total_comp_loss / num_batches,
+            'avg_div_loss': total_div_loss / num_batches
+        })
+
+
+    assert num_batches == len(dataloader)   
+
+    return avg_loss, metrics
 
 def validate_epoch(model, dataloader, criterion, device, loss_type='margin'):
     """

@@ -22,6 +22,7 @@ class TwoTowerModel(nn.Module):
         layers = []
         prev_dim = input_dim
         
+        
         for hidden_dim in hidden_dims:
             layers.extend([
                 nn.Linear(prev_dim, hidden_dim),

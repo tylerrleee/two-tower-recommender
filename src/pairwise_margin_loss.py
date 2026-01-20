@@ -20,6 +20,7 @@ class PairwiseMarginLoss(nn.Module):
         if self.similarity == "cosine":
             a = F.normalize(a, dim=1)
             b = F.normalize(b, dim=1)
+        #TODO add different p-norm
         
         # Dot Product
         return torch.matmul(a, b.T)

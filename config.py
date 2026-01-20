@@ -34,6 +34,11 @@ RENAME_MAP           = {
                         'Additional Info (Optional)': 'additional_info'
 }
 
+DEFAULT_IDENTIFIER = ['role',
+                       'name',
+                        'major', 
+                        'year',
+                        'ufl_email']
 DEFAULT_PROFILE_TEXT = [
                         'free_time',
                         'hobbies',

@@ -21,18 +21,6 @@ class GroupMatcher:
         self.compatibility_weight = compatibility_weight
         self.diversity_weight = diversity_weight
 
-    def compute_compatability(self, mentor_emb, mentee_emb):
-        """ Cosine Similarity between mentor and mentees"""
-        return np.dot(mentor_emb, mentee_emb.T)
-    
-    def compute_diversity(self, mentee1_features, mentee2_features):
-        """
-        Measure diversity between two mentees
-        higher score = more diverse
-        """
-        # Compute average difference
-        diff = np.abs(mentee1_features - mentee2_features)
-        return np.mean(diff)
     
     def _format_results(self, mentor_indices, mentee_indices, cost_matrix):
         """ Helper to convert indices into final group dictionary.

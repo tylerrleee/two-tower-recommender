@@ -20,15 +20,14 @@ import pandas as pd
 import torch
 from typing import Optional, Dict, List, Any, TypedDict, Tuple
 
-from features      import FeatureEngineer
-from embedding    import EmbeddingEngineer
-from boostrap_positive_pairs    import bootstrap_positive_pairs_from_embeddings
-
-from model            import TwoTowerModel
-from train            import MentorMenteeDataset, train_epoch, train_model_with_validation
-from matcher        import GroupMatcher
-from loss              import DiversityLoss
-from pairwise_margin_loss import PairwiseMarginLoss
+from src.features      import FeatureEngineer
+from src.embedding    import EmbeddingEngineer
+from src.boostrap_positive_pairs    import bootstrap_positive_pairs_from_embeddings
+from src.model            import TwoTowerModel
+from src.train            import MentorMenteeDataset, train_epoch, train_model_with_validation
+from src.matcher        import GroupMatcher
+from src.loss              import DiversityLoss
+from src.pairwise_margin_loss import PairwiseMarginLoss
 
 import config
 import traceback
@@ -123,7 +122,12 @@ class End2EndMatching:
         # STORAGE - Combined Embeddings (S-BERT text + meta features)
         # Shape: (n_samples, embedding_dim + meta_feature_dim)
         self.mentor_embedding: Optional[npt.NDArray[np.float32]] = None
-        self.mentee_embedding: Optional[npt.NDArray[np.float32]] = None     
+        self.mentee_embedding: Optional[npt.NDArray[np.float32]] = None    
+        
+        # STORAGE - Learned Embeddings (from Two-Tower model)
+        # Shape: (n_samples, output_dim) where output_dim = 64
+        self.mentor_embeddings_learned: Optional[npt.NDArray[np.float32]] = None
+        self.mentee_embeddings_learned: Optional[npt.NDArray[np.float32]] = None 
         # MATCHING - Results
         self.groups: Optional[Dict[int, GroupInfo]] = None
         self.results: Optional[List[MatchResult]] = None
@@ -134,10 +138,13 @@ class End2EndMatching:
         Load CSV data and split into mentors and mentees
         1. Check if required columns exists
         """
+        self.df = pd.read_csv(self.data_path)
+        self.df = FeatureEngineer.rename_column(self.df, config.RENAME_MAP)
 
-        # Data Check
-        required_cols = {'role', 'name', 'major', 'year', 'ufl_email'}
-        missing = required_cols - set(self.df.columns)
+        # Column Check
+        #required_cols = {'role', 'name', 'major', 'year', 'ufl_email'}
+        required_cols = config.DEFAULT_IDENTIFIER
+        missing = set(required_cols) - set(self.df.columns)
         if missing:
             raise ValueError(f"CSV missing required columns: {missing}")
         
@@ -147,11 +154,8 @@ class End2EndMatching:
         
         # Check for empty DataFrame
         if len(self.df) == 0:
-            raise ValueError("CSV file is empty")
+            raise ValueError("Empty Dataframe - CSV file is empty")
         
-        self.df = pd.read_csv(self.data_path)
-        self.df = FeatureEngineer.rename_column(self.df, config.RENAME_MAP)
-
         print(f"Loaded {len(self.df)} total applicants")
 
         self.df_mentors = self.df[self.df['role'] == 0].copy()
@@ -210,9 +214,9 @@ class End2EndMatching:
     def generate_embeddings(self):
 
         self.embedding_engineer = EmbeddingEngineer(
-            sbert_model_name    =self.sbert_pretrained_model,
-            embedding_batch_size=64,
-            use_gpu             =torch.cuda.is_available()
+            sbert_model_name    = self.sbert_pretrained_model,
+            embedding_batch_size= 64,
+            use_gpu             = torch.cuda.is_available()
         )
 
         # Generate embeddings
@@ -251,6 +255,7 @@ class End2EndMatching:
         if self.use_pretrained_model and self.model_checkpoint_path:
             print(f"Loading pretrained model from: {self.model_checkpoint_path}")
             self.model.load_state_dict(torch.load(self.model_checkpoint_path))
+
         # TODO What to do when we don't use a pretrained model?
 
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -259,11 +264,13 @@ class End2EndMatching:
 
         return self
 
-    def train_model(self, 
-                    num_epochs: int, 
-                    batch_size: int, 
-                    learning_rate: float, 
-                    loss_type: str = 'margin'):
+    def train_model(
+            self, 
+            num_epochs: int, 
+            batch_size: int, 
+            learning_rate: float, 
+            loss_type: str = 'margin'
+            ) -> Tuple['End2EndMatching', Dict[str, Any]]:
         '''
         Training the model with loss function 
         
@@ -272,77 +279,168 @@ class End2EndMatching:
             batch_size: Batch size for training
             learning_rate: Learning rate for optimizer
             loss_type: 'margin' or 'diversity' - which loss function to use
+        
+        Returns:
+            Tuple of (self, training_history)
         '''
         print(f"Epochs: {num_epochs}, Batch size: {batch_size}, LR: {learning_rate}")
         print(f"Loss type: {loss_type}")
 
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-        # Get synthetic positive pairs
+        # Get dataset sizes
         n_mentors = len(self.mentor_embedding)
         n_mentees = len(self.mentee_embedding)
-        
         n_pairs = min(n_mentees, n_mentors)
+        
+        print(f"\nDataset Info:")
+        print(f"  Mentors: {n_mentors}")
+        print(f"  Mentees: {n_mentees}")
+        print(f"  Training pairs: {n_pairs}")
+        print(f"  Unused mentees: {n_mentees - n_pairs}")
 
-        # Synthetic Pairng [1, 2, 3,...n]
-        #pos_pairs = np.arange(n_pairs)
+        # ========================================
+        # Step 1: Bootstrap positive pairs
+        # ========================================
+        print("\n[1/7] Bootstrapping positive pairs...")
         pos_pairs = bootstrap_positive_pairs_from_embeddings(
             mentor_embeddings=self.mentor_embedding,
             mentee_embeddings=self.mentee_embedding,
-            top_k=5,
+            top_k=5,  # Unused for 'hungarian' method
             method='hungarian'
         )
-        # Compute diversity features 
+        # pos_pairs[i] = global index of best mentee for mentor_i
+        # Example: [342, 17, 899, ...] (length = n_mentors)
+        
+        # Validation - Ensure pos_pairs are valid indices
+        assert len(pos_pairs) == n_mentors, \
+            f"Bootstrap returned {len(pos_pairs)} pairs but expected {n_mentors}"
+        assert pos_pairs.min() >= 0, \
+            f"Invalid negative index in pos_pairs: {pos_pairs.min()}"
+        assert pos_pairs.max() < n_mentees, \
+            f"Index {pos_pairs.max()} exceeds mentee count {n_mentees}"
+
+        # ========================================
+        # Step 2: Reorder mentee data to align with matches
+        # ========================================
+        print("[2/7] Aligning mentee data with bootstrap matches...")
+        
+        # Reorder mentee embeddings: matched_mentee_embedding[i] is the match for mentor_i
+        matched_mentee_embedding = self.mentee_embedding[pos_pairs]
+        
+        # Reorder DataFrame to match
+        matched_mentee_df = self.df_mentees.iloc[pos_pairs].reset_index(drop=True) 
+        
+        # Validation
+        ## 1. There should be an equal amount of matched mentee and mentor embeddings
+        assert matched_mentee_embedding.shape == (n_mentors, self.mentor_embedding.shape[1]), \
+            f"Expected shape ({n_mentors}, {self.mentor_embedding.shape[1]}), got {matched_mentee_embedding.shape}"
+        
+        assert len(matched_mentee_df) == n_mentors, \
+            f"Matched DataFrame has {len(matched_mentee_df)} rows but expected {n_mentors}"
+        
+        print(f"  Aligned mentee data shape: {matched_mentee_embedding.shape}")
+
+        # ========================================
+        # Step 3: Compute diversity features
+        # ========================================
+        print("[3/7] Computing diversity features...")
+        
+        # Compute diversity for matched mentees
         mentee_diversity = self.feature_engineer.compute_diversity_features(
-            df=self.df_mentees.head(n_pairs)
+            df=matched_mentee_df
         )
-        mentor_diversity = np.zeros((n_pairs, mentee_diversity.shape[1]))
+        
+        # Compute diversity for all mentors
+        mentor_diversity = self.feature_engineer.compute_diversity_features(
+            df=self.df_mentors.head(n_pairs)
+        )
+        
+        print(f"  Mentee diversity shape: {mentee_diversity.shape}")
+        print(f"  Mentor diversity shape: {mentor_diversity.shape}")
 
-        # Create dataset
+        # ========================================
+        # Step 4: Create dataset with aligned data
+        # ========================================
+        print("[4/7] Creating PyTorch dataset...")
+        
         dataset = MentorMenteeDataset(
-            mentee_features=self.mentee_embedding[:n_pairs],
-            mentor_features=self.mentor_embedding[:n_pairs],
-            mentee_diversity=mentee_diversity, 
-            mentor_diversity=mentor_diversity,
-            positive_pairs=pos_pairs
+            mentor_features=self.mentor_embedding[:n_pairs],  
+            mentee_features=matched_mentee_embedding,         
+            mentor_diversity=mentor_diversity,                
+            mentee_diversity=mentee_diversity,                
+            positive_pairs=np.arange(n_pairs)             
         )
+        
+        print(f"  Dataset size: {len(dataset)} samples")
+        
+        # Quick validation: Check first sample
+        sample = dataset[0]
+        print(f"  Sample 0 shapes:")
+        print(f"    mentor: {sample['mentor'].shape}")
+        print(f"    mentee: {sample['mentee'].shape}")
+        print(f"    pair_idx: {sample['pair_idx']}")
 
-        # Split into train/val (80/20)
-
+        # ========================================
+        # Step 5: Train/Val split
+        # ========================================
+        print("[5/7] Splitting into train/validation sets...")
+        
         train_size = int(0.80 * len(dataset))
         val_size = len(dataset) - train_size
+        
         train_dataset, val_dataset = torch.utils.data.random_split(
             dataset, [train_size, val_size]
         )
+        
+        print(f"  Train size: {train_size}")
+        print(f"  Val size: {val_size}")
 
-        # Load Data in randomized batches 
+        # Create dataloaders
         train_loader = torch.utils.data.DataLoader(
-            train_dataset, batch_size=batch_size, shuffle=True
+            train_dataset, 
+            batch_size=batch_size, 
+            shuffle=True
         )
         val_loader = torch.utils.data.DataLoader(
-            val_dataset, batch_size=batch_size, shuffle=False
+            val_dataset, 
+            batch_size=batch_size, 
+            shuffle=False
         )
+        
+        print(f"  Train batches: {len(train_loader)}")
+        print(f"  Val batches: {len(val_loader)}")
 
-        # Intialize Adam Optimizer
+        # ========================================
+        # Step 6: Initialize optimizer and loss
+        # ========================================
+        print("[6/7] Initializing optimizer and loss function...")
+        
         optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
         
-        # Choose loss function
         if loss_type == 'margin':
-            criterion = PairwiseMarginLoss(margin=0.2, 
-                                           similarity="cosine")
+            criterion = PairwiseMarginLoss(
+                margin=0.2, 
+                similarity="cosine"
+            )
+            print(f"  Loss: PairwiseMarginLoss(margin=0.2)")
         elif loss_type == 'diversity':
             criterion = DiversityLoss(
                 compatibility_weight=0.7,
                 diversity_weight=0.3,
                 temperature=0.1
             )
+            print(f"  Loss: DiversityLoss(comp=0.7, div=0.3, temp=0.1)")
         else:
             raise ValueError(f"Unknown loss_type: {loss_type}")
 
-        print("Starting training...")
+        # ========================================
+        # Step 7: Training loop
+        # ========================================
+        print(f"[7/7] Starting training loop...\n")
+        
         self.model.train()
-
-        # Use the improved training loop
+        
         history = train_model_with_validation(
             model=self.model,
             train_loader=train_loader,
@@ -355,8 +453,9 @@ class End2EndMatching:
             early_stopping_patience=5
         )
 
-        print("Training completed!")
+        print("\nTraining completed!")
 
+        # Save model
         save_path = f"model_checkpoint_{loss_type}_epoch{num_epochs}.pt"
         torch.save(self.model.state_dict(), save_path)
         print(f"Model saved to: {save_path}")
@@ -537,7 +636,7 @@ def main():
     """
     DATA_PATH   = "./vso_ratataou_ace_mock_data.csv"
     SBERT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-    TRAIN_MODEL = True
+    TRAIN_MODEL = False
     USE_FAISS   = False 
 
     # Training model
@@ -578,6 +677,7 @@ def main():
     except Exception as e:
         print(f"\nError occurred: {str(e)}")
         traceback.print_exc()
+
 # TODO import logging and replace all print statements - 
 # TODO Test at different DiversityLoss weights - training
 # TODO Test parallel loading w/ num_workers - training
