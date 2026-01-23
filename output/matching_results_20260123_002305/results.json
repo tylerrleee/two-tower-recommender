@@ -1,0 +1,22 @@
+{
+  "metadata": {
+    "timestamp": "2026-01-23T00:23:05.680790",
+    "total_groups": 642,
+    "total_mentors": 1000,
+    "total_mentees": 1000,
+    "model_used": "TwoTowerModel",
+    "avg_group_score": 0.9221061349286469
+  },
+  "groups": [
+    {
+      "group_id": 418,
+      "mentor": {
+        "name": "Carrie Andrews",
+        "major": "Marketing",
+        "email": "stephanie195@ufl.edu"
+      },
+      "mentees": [
+        {
+          "name": "Brandi Ellis",
+          "major": "Data Science",
+          "year": 

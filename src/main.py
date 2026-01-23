@@ -30,6 +30,7 @@ from src.train            import MentorMenteeDataset, train_epoch, train_model_w
 from src.matcher        import GroupMatcher
 from src.loss              import DiversityLoss
 from src.pairwise_margin_loss import PairwiseMarginLoss
+from src.saving_csv import *
 
 import config
 import traceback
@@ -256,15 +257,28 @@ class End2EndMatching:
         # Load Pretrained weights if true
         if self.use_pretrained_model and self.model_checkpoint_path:
             print(f"Loading pretrained model from: {self.model_checkpoint_path}")
-            self.model.load_state_dict(torch.load(self.model_checkpoint_path))
+            
+            # Load the full checkpoint
+            checkpoint = torch.load(self.model_checkpoint_path, map_location=torch.device('cpu'))
+            
+            # Extract just the model weights
+            if 'model_state_dict' in checkpoint:
 
-        # TODO What to do when we don't use a pretrained model?
+                self.model.load_state_dict(checkpoint['model_state_dict'])
+                print(f"  Loaded from epoch {checkpoint.get('epoch', 'unknown')}")
+                print(f"  Training loss: {checkpoint.get('train_loss', 'N/A')}")
+                print(f"  Validation loss: {checkpoint.get('val_loss', 'N/A')}")
+            else:
+                self.model.load_state_dict(checkpoint)
+        else:
+            print("No pretrained model found. Initializing with default random weights.")
 
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model = self.model.to(device)
-        
 
         return self
+
+
 
     def train_model(
             self,
@@ -608,13 +622,172 @@ class End2EndMatching:
         return self
 
 
+    def _save_groups_summary_csv(self, output_path: str) -> None:
+        """Save high-level summary of each group."""
+        
+        filepath = os.path.join(output_path, "groups_summary.csv")
+        
+        with open(filepath, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            
+            # Header
+            writer.writerow([
+                'Group ID',
+                'Mentor Name',
+                'Mentor Major',
+                'Mentor Email',
+                'Num Mentees',
+                'Avg Compatibility Score',
+                'Mentee Names'
+            ])
+            
+            # Data rows
+            for result in self.results:
+                mentee_names = ', '.join([m['name'] for m in result['mentees']])
+                
+                writer.writerow([
+                    result['group_id'],
+                    result['mentor']['name'],
+                    result['mentor']['major'],
+                    result['mentor']['email'],
+                    len(result['mentees']),
+                    f"{result['compatibility_score']:.4f}",
+                    mentee_names
+                ])
+
+
+    def _save_detailed_matches_csv(self, output_path: str) -> None:
+        """Save flattened mentor-mentee pairs with individual scores."""
+        import csv
+        
+        filepath = os.path.join(output_path, "detailed_matches.csv")
+        
+        with open(filepath, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            
+            # Header
+            writer.writerow([
+                'Group ID',
+                'Mentor Name',
+                'Mentor Major',
+                'Mentor Email',
+                'Mentee Name',
+                'Mentee Major',
+                'Mentee Year',
+                'Individual Score',
+                'Group Avg Score'
+            ])
+            
+            # Data rows - one row per mentor-mentee pair
+            for result in self.results:
+                mentor = result['mentor']
+                group_id = result['group_id']
+                group_score = result['compatibility_score']
+                
+                for mentee, score in zip(result['mentees'], result['individual_scores']):
+                    writer.writerow([
+                        group_id,
+                        mentor['name'],
+                        mentor['major'],
+                        mentor['email'],
+                        mentee['name'],
+                        mentee['major'],
+                        mentee['year'],
+                        f"{score:.4f}",
+                        f"{group_score:.4f}"
+                    ])
+
+
+    def _save_readable_report(self, output_path: str) -> None:
+        """Save human-readable text report."""
+        filepath = os.path.join(output_path, "readable_report.txt")
+        
+        with open(filepath, 'w', encoding='utf-8') as f:
+            # Header
+            f.write("=" * 80 + "\n")
+            f.write("MENTOR-MENTEE GROUP MATCHING RESULTS\n")
+            f.write("=" * 80 + "\n")
+            f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Total Groups: {len(self.results)}\n")
+            
+            if self.results:
+                avg_score = np.mean([r['compatibility_score'] for r in self.results])
+                f.write(f"Average Compatibility Score: {avg_score:.4f}\n")
+            
+            f.write("=" * 80 + "\n\n")
+            
+            # Individual group details
+            for i, result in enumerate(self.results, 1):
+                f.write(f"\n{'='*80}\n")
+                f.write(f"GROUP {i} | Compatibility Score: {result['compatibility_score']:.4f}\n")
+                f.write(f"{'='*80}\n\n")
+                
+                # Mentor info
+                f.write(f"MENTOR:\n")
+                f.write(f"  Name:  {result['mentor']['name']}\n")
+                f.write(f"  Major: {result['mentor']['major']}\n")
+                f.write(f"  Email: {result['mentor']['email']}\n\n")
+                
+                # Mentees info
+                f.write(f"MENTEES ({len(result['mentees'])}):\n")
+                for j, (mentee, score) in enumerate(zip(result['mentees'], result['individual_scores']), 1):
+                    f.write(f"  {j}. {mentee['name']}\n")
+                    f.write(f"     Major: {mentee['major']}\n")
+                    f.write(f"     Year:  {mentee['year']}\n")
+                    f.write(f"     Compatibility Score: {score:.4f}\n")
+                    if j < len(result['mentees']):
+                        f.write("\n")
+                
+                f.write("\n")
+            
+            # Summary statistics at the end
+            f.write("\n" + "=" * 80 + "\n")
+            f.write("SUMMARY STATISTICS\n")
+            f.write("=" * 80 + "\n\n")
+            
+            scores = [r['compatibility_score'] for r in self.results]
+            f.write(f"Total Groups: {len(self.results)}\n")
+            f.write(f"Average Score: {np.mean(scores):.4f}\n")
+            f.write(f"Median Score:  {np.median(scores):.4f}\n")
+            f.write(f"Min Score:     {np.min(scores):.4f}\n")
+            f.write(f"Max Score:     {np.max(scores):.4f}\n")
+            f.write(f"Std Dev:       {np.std(scores):.4f}\n")
+
+
 
     def save_results(self, output_dir: str):
         """
-        Save matching results to a CSV file
+        Save matching results to CSV
+
+        1. groups_summary.csv : Overview of all groups
+        2. detailed_matches.csv : Mentor-mentee pairs with scores
+        
         """
-        ...
-            
+        if self.results is None or len(self.results) == 0:
+            raise ValueError("No results to save. Call set_output_result() first.")
+                
+        # Create output directory with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_path = os.path.join(output_dir, f"matching_results_{timestamp}")
+        os.makedirs(output_path, exist_ok=True)
+        
+        print(f"\nSaving results to: {output_path}")
+        
+        # 1. Save groups summary CSV
+        self._save_groups_summary_csv(output_path)
+        
+        # 2. Save detailed matches CSV (flattened)
+        self._save_detailed_matches_csv(output_path)
+ 
+        # 3. Save readable text report
+        self._save_readable_report(output_path)
+        
+        print(f"✓ Saved 4 output files:")
+        print(f"  - groups_summary.csv")
+        print(f"  - results.json")
+        print(f"  - readable_report.txt")
+        
+        return self
 
 
 def main():
@@ -630,6 +803,8 @@ def main():
     SBERT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
     TRAIN_MODEL = True
     USE_FAISS   = False 
+    USE_PRETRAINED_MODEL = True
+    MODEL_CHECKPOINT = "./best_model.pt"
 
     # Training model
     NUMB_EPOCHS   = 10
@@ -638,9 +813,10 @@ def main():
 
 
     pipeline = End2EndMatching(
-        data_path               =DATA_PATH,
-        sbert_pretrained_model  =SBERT_MODEL,
-        use_pretrained_model    = False
+        data_path               = DATA_PATH,
+        sbert_pretrained_model  = SBERT_MODEL,
+        use_pretrained_model    = USE_PRETRAINED_MODEL,
+        model_checkpoint_path   = MODEL_CHECKPOINT
     )
 
     try:
@@ -660,11 +836,13 @@ def main():
                 use_hard_negatives=True
             )
             pipeline.generate_mentor_embeddings()
+        else:
+            pipeline.generate_mentor_embeddings()
 
         pipeline.match_groups(use_faiss=USE_FAISS)
         pipeline.set_output_result()
         pipeline.save_results(output_dir='output')
-        pipeline.display_results()
+        #pipeline.display_results()
 
         print("\n" + "=" * 60)
         print("Pipeline completed successfully!")
