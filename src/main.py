@@ -18,13 +18,15 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 import torch
+from torch.utils.data import Subset, DataLoader
+from scipy.optimize import linear_sum_assignment
 from typing import Optional, Dict, List, Any, TypedDict, Tuple
 
 from src.features      import FeatureEngineer
 from src.embedding    import EmbeddingEngineer
-from src.boostrap_positive_pairs    import bootstrap_positive_pairs_from_embeddings
+from src.boostrap_positive_pairs    import bootstrap_topk_pairs_from_embeddings
 from src.model            import TwoTowerModel
-from src.train            import MentorMenteeDataset, train_epoch, train_model_with_validation
+from src.train            import MentorMenteeDataset, train_epoch, train_model_with_validation, create_mentor_level_split
 from src.matcher        import GroupMatcher
 from src.loss              import DiversityLoss
 from src.pairwise_margin_loss import PairwiseMarginLoss
@@ -265,182 +267,165 @@ class End2EndMatching:
         return self
 
     def train_model(
-            self, 
-            num_epochs: int, 
-            batch_size: int, 
-            learning_rate: float, 
-            loss_type: str = 'margin'
-            ) -> Tuple['End2EndMatching', Dict[str, Any]]:
+            self,
+            num_epochs          : int,
+            batch_size          : int,
+            learning_rate       : float,
+            loss_type           : str = 'margin',
+            use_multi_positive  : bool = True,
+            k_positives         : int = 3,
+            use_hard_negatives  : bool = True,
+            val_split           : float = 0.2,
+            early_stopping_patience: int = 5,
+            checkpoint_path     : str = 'best_model.pt'
+                ) -> Tuple['End2EndMatching', Dict[str, Any]]:
         '''
-        Training the model with loss function 
+        Training the model with multi-positive bootstrap and hard negatives
         
         Args:
             num_epochs: Number of training epochs
             batch_size: Batch size for training
             learning_rate: Learning rate for optimizer
-            loss_type: 'margin' or 'diversity' - which loss function to use
+            loss_type: 'margin' or 'diversity'
+            use_multi_positive: Use top-K positives per mentor (default: True)
+            k_positives: Number of positive candidates per mentor (default: 3)
+            use_hard_negatives: Include unused mentees as hard negatives (default: True)
+            val_split: Validation split ratio (default: 0.2)
+            early_stopping_patience: Patience for early stopping (default: 5)
+            checkpoint_path: Path to save best model (default: 'best_model.pt')
         
         Returns:
             Tuple of (self, training_history)
         '''
+
+        print(f"\n{'='*70}")
+        print(f"TRAINING CONFIGURATION")
+        print(f"{'='*70}")
         print(f"Epochs: {num_epochs}, Batch size: {batch_size}, LR: {learning_rate}")
         print(f"Loss type: {loss_type}")
-
+        print(f"Multi-positive: {use_multi_positive} (k={k_positives if use_multi_positive else 1})")
+        print(f"Hard negatives: {use_hard_negatives}")
+        print(f"Validation split: {val_split}")
+        print(f"{'='*70}\n")
+    
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-        # Get dataset sizes
         n_mentors = len(self.mentor_embedding)
         n_mentees = len(self.mentee_embedding)
-        n_pairs = min(n_mentees, n_mentors)
-        
-        print(f"\nDataset Info:")
+    
+        print(f"Dataset Info:")
         print(f"  Mentors: {n_mentors}")
         print(f"  Mentees: {n_mentees}")
-        print(f"  Training pairs: {n_pairs}")
-        print(f"  Unused mentees: {n_mentees - n_pairs}")
 
-        # ========================================
         # Step 1: Bootstrap positive pairs
-        # ========================================
-        print("\n[1/7] Bootstrapping positive pairs...")
-        pos_pairs = bootstrap_positive_pairs_from_embeddings(
-            mentor_embeddings=self.mentor_embedding,
-            mentee_embeddings=self.mentee_embedding,
-            top_k=5,  # Unused for 'hungarian' method
-            method='hungarian'
-        )
-        # pos_pairs[i] = global index of best mentee for mentor_i
-        # Example: [342, 17, 899, ...] (length = n_mentors)
-        
-        # Validation - Ensure pos_pairs are valid indices
-        assert len(pos_pairs) == n_mentors, \
-            f"Bootstrap returned {len(pos_pairs)} pairs but expected {n_mentors}"
-        assert pos_pairs.min() >= 0, \
-            f"Invalid negative index in pos_pairs: {pos_pairs.min()}"
-        assert pos_pairs.max() < n_mentees, \
-            f"Index {pos_pairs.max()} exceeds mentee count {n_mentees}"
-
-        # ========================================
-        # Step 2: Reorder mentee data to align with matches
-        # ========================================
-        print("[2/7] Aligning mentee data with bootstrap matches...")
-        
-        # Reorder mentee embeddings: matched_mentee_embedding[i] is the match for mentor_i
-        matched_mentee_embedding = self.mentee_embedding[pos_pairs]
-        
-        # Reorder DataFrame to match
-        matched_mentee_df = self.df_mentees.iloc[pos_pairs].reset_index(drop=True) 
-        
-        # Validation
-        ## 1. There should be an equal amount of matched mentee and mentor embeddings
-        assert matched_mentee_embedding.shape == (n_mentors, self.mentor_embedding.shape[1]), \
-            f"Expected shape ({n_mentors}, {self.mentor_embedding.shape[1]}), got {matched_mentee_embedding.shape}"
-        
-        assert len(matched_mentee_df) == n_mentors, \
-            f"Matched DataFrame has {len(matched_mentee_df)} rows but expected {n_mentors}"
-        
-        print(f"  Aligned mentee data shape: {matched_mentee_embedding.shape}")
-
-        # ========================================
-        # Step 3: Compute diversity features
-        # ========================================
-        print("[3/7] Computing diversity features...")
-        
-        # Compute diversity for matched mentees
-        mentee_diversity = self.feature_engineer.compute_diversity_features(
-            df=matched_mentee_df
-        )
-        
-        # Compute diversity for all mentors
-        mentor_diversity = self.feature_engineer.compute_diversity_features(
-            df=self.df_mentors.head(n_pairs)
-        )
-        
-        print(f"  Mentee diversity shape: {mentee_diversity.shape}")
-        print(f"  Mentor diversity shape: {mentor_diversity.shape}")
-
-        # ========================================
-        # Step 4: Create dataset with aligned data
-        # ========================================
-        print("[4/7] Creating PyTorch dataset...")
-        
-        dataset = MentorMenteeDataset(
-            mentor_features=self.mentor_embedding[:n_pairs],  
-            mentee_features=matched_mentee_embedding,         
-            mentor_diversity=mentor_diversity,                
-            mentee_diversity=mentee_diversity,                
-            positive_pairs=np.arange(n_pairs)             
-        )
-        
-        print(f"  Dataset size: {len(dataset)} samples")
-        
-        # Quick validation: Check first sample
-        sample = dataset[0]
-        print(f"  Sample 0 shapes:")
-        print(f"    mentor: {sample['mentor'].shape}")
-        print(f"    mentee: {sample['mentee'].shape}")
-        print(f"    pair_idx: {sample['pair_idx']}")
-
-        # ========================================
-        # Step 5: Train/Val split
-        # ========================================
-        print("[5/7] Splitting into train/validation sets...")
-        
-        train_size = int(0.80 * len(dataset))
-        val_size = len(dataset) - train_size
-        
-        train_dataset, val_dataset = torch.utils.data.random_split(
-            dataset, [train_size, val_size]
-        )
-        
-        print(f"  Train size: {train_size}")
-        print(f"  Val size: {val_size}")
-
-        # Create dataloaders
-        train_loader = torch.utils.data.DataLoader(
-            train_dataset, 
-            batch_size=batch_size, 
-            shuffle=True
-        )
-        val_loader = torch.utils.data.DataLoader(
-            val_dataset, 
-            batch_size=batch_size, 
-            shuffle=False
-        )
-        
-        print(f"  Train batches: {len(train_loader)}")
-        print(f"  Val batches: {len(val_loader)}")
-
-        # ========================================
-        # Step 6: Initialize optimizer and loss
-        # ========================================
-        print("[6/7] Initializing optimizer and loss function...")
-        
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
-        
-        if loss_type == 'margin':
-            criterion = PairwiseMarginLoss(
-                margin=0.2, 
-                similarity="cosine"
+        if use_multi_positive:
+            pos_pairs, unused_mentees = bootstrap_topk_pairs_from_embeddings(
+                mentor_embeddings=self.mentor_embedding,
+                mentee_embeddings=self.mentee_embedding,
+                k=k_positives,
+                method='hungarian_topk'
             )
-            print(f"  Loss: PairwiseMarginLoss(margin=0.2)")
-        elif loss_type == 'diversity':
+            print(f"  Multi-positive pairs shape: {pos_pairs.shape}")
+            print(f"  Unused mentees: {len(unused_mentees)}")
+        else: 
+            similarity_matrix = np.dot(self.mentor_embedding, self.mentee_embedding.T)
+            _, col_ind = linear_sum_assignment(similarity_matrix, maximize=True)
+            pos_pairs = col_ind  # Shape: (n_mentors,)
+            
+            used_mentees = set(pos_pairs)
+            all_mentees = set(range(n_mentees))
+            unused_mentees = np.array(sorted(all_mentees - used_mentees), dtype=np.int64)
+            print(f"  Single positive pairs: {len(pos_pairs)}")
+            print(f"  Unused mentees: {len(unused_mentees)}")
+
+        if loss_type == 'diversity':
+            mentor_diversity = self.feature_engineer.compute_diversity_features(
+                self.mentor_data['raw_df']
+            )
+            mentee_diversity = self.feature_engineer.compute_diversity_features(
+                self.mentee_data['raw_df']
+            )
+            print(f"  Diversity features: {mentor_diversity.shape}")
+        elif loss_type == 'margin':
+            # Dummy diversity features for margin loss
+            mentor_diversity = np.zeros((n_mentors, 1), dtype=np.float32)
+            mentee_diversity = np.zeros((n_mentees, 1), dtype=np.float32)
+
+            # Step 3: Prepare hard negative pool
+        if use_hard_negatives and len(unused_mentees) > 0:
+            hard_negative_pool = self.mentee_embedding[unused_mentees]
+            hard_negative_diversity = mentee_diversity[unused_mentees]
+            print(f"  Hard negative pool: {hard_negative_pool.shape}")
+        else:
+            hard_negative_pool = None
+            hard_negative_diversity = None   
+
+            # Step 4: Create mentor-level train/val split
+        train_mentor_indices, val_mentor_indices = create_mentor_level_split(
+            n_mentors=n_mentors,
+            train_ratio=1.0 - val_split,
+            random_seed=42
+        )
+        
+            # Step 5: Create datasets
+        full_dataset = MentorMenteeDataset(
+            mentor_features=self.mentor_embedding,
+            mentee_features=self.mentee_embedding,
+            mentor_diversity=mentor_diversity,
+            mentee_diversity=mentee_diversity,
+            positive_pairs=pos_pairs,
+            hard_negative_pool=hard_negative_pool,
+            hard_negative_diversity=hard_negative_diversity
+        )
+
+        train_dataset = Subset(full_dataset, train_mentor_indices)
+        val_dataset = Subset(full_dataset, val_mentor_indices)
+
+        print(f"\nDataset split:")
+        print(f"  Train samples: {len(train_dataset)}")
+        print(f"  Val samples: {len(val_dataset)}")
+
+        # Step 6: Create dataloaders
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=0,  # Set to 0 to avoid multiprocessing issues
+            pin_memory=torch.cuda.is_available()
+        )
+
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=0,
+            pin_memory=torch.cuda.is_available()
+        )
+
+        # Step 7: Initialize loss function
+        if loss_type == 'diversity':
             criterion = DiversityLoss(
                 compatibility_weight=0.7,
                 diversity_weight=0.3,
                 temperature=0.1
             )
-            print(f"  Loss: DiversityLoss(comp=0.7, div=0.3, temp=0.1)")
+        elif loss_type == 'margin':
+            criterion = PairwiseMarginLoss(
+                margin=0.2,
+                similarity='cosine'
+            )
         else:
             raise ValueError(f"Unknown loss_type: {loss_type}")
+        
+        # Step 8: Initialize optimizer
+        optimizer = torch.optim.Adam(
+            self.model.parameters(),
+            lr=learning_rate,
+            weight_decay=1e-5  # L2 regularization
+        )
 
-        # ========================================
-        # Step 7: Training loop
-        # ========================================
-        print(f"[7/7] Starting training loop...\n")
-        
-        self.model.train()
-        
+        # Step 9: Train model
+        print(f"\nStarting training...")
         history = train_model_with_validation(
             model=self.model,
             train_loader=train_loader,
@@ -450,19 +435,26 @@ class End2EndMatching:
             device=device,
             num_epochs=num_epochs,
             loss_type=loss_type,
-            early_stopping_patience=5
+            early_stopping_patience=early_stopping_patience,
+            max_grad_norm=1.0,
+            checkpoint_path=checkpoint_path,
+            use_hard_negatives=use_hard_negatives
         )
 
-        print("\nTraining completed!")
-
-        # Save model
-        save_path = f"model_checkpoint_{loss_type}_epoch{num_epochs}.pt"
-        torch.save(self.model.state_dict(), save_path)
-        print(f"Model saved to: {save_path}")
+        print(f"\n{'='*70}")
+        print(f"TRAINING SUMMARY")
+        print(f"{'='*70}")
+        print(f"Best epoch: {history['best_epoch'] + 1}")
+        print(f"Best val loss: {min(history['val_loss']):.4f}")
+        print(f"Final train loss: {history['train_loss'][-1]:.4f}")
+        print(f"Final val loss: {history['val_loss'][-1]:.4f}")
+        print(f"Early stopping: {'Yes' if history['stopped_early'] else 'No'}")
+        print(f"{'='*70}\n")
 
         return self, history
-    
 
+
+        
     def generate_mentor_embeddings(self):
         """
         Generate learned embeddings for all mentors using train model
@@ -636,7 +628,7 @@ def main():
     """
     DATA_PATH   = "./vso_ratataou_ace_mock_data.csv"
     SBERT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-    TRAIN_MODEL = False
+    TRAIN_MODEL = True
     USE_FAISS   = False 
 
     # Training model
@@ -658,10 +650,14 @@ def main():
         pipeline.initialize_model()
 
         if TRAIN_MODEL:
-            pipeline.train_model(
-                num_epochs      =NUMB_EPOCHS,
-                batch_size      =BATCH_SIZE,
-                learning_rate   =LEARNING_RATE
+            pipeline, history = pipeline.train_model(
+                num_epochs=20,
+                batch_size=32,
+                learning_rate=1e-3,
+                loss_type='margin',
+                use_multi_positive=True,
+                k_positives=3,
+                use_hard_negatives=True
             )
             pipeline.generate_mentor_embeddings()
 
