@@ -1,3 +1,8 @@
+"""
+Pydantic Schemas for API JSON requests and responses
+
+"""
+
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import List, Literal, Optional
 from enum import Enum
