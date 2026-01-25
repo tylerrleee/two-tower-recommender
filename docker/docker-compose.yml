@@ -1,0 +1,24 @@
+version: '3.14.2'
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: matching-api
+    ports:
+    - "8000:8000"
+    environment:
+      - MODEL_PATH=/app/models/best_model.pt
+      - LOG_LEVEL=INFO
+      - WORKERS=2
+    volumes:
+      - ../models:/app/models:ro # Read Only
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
