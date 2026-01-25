@@ -12,3 +12,6 @@ __pycache__/
 okcupid_profiles.csv
 vso_ratataou_ace_mock_data.csv
 *.csv
+
+__pycache__
+*.ipynb_checkpoints

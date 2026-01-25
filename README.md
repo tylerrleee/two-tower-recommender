@@ -295,3 +295,4 @@ Fuxi-MME Authors. (2025). Revisiting scalable sequential recommendation with Mul
 
 Mlshark. (2023). InfoNCE explained in details and implementations. Medium. https://medium.com/@mlshark/infonce-explained-in-details-and-implementations-902f28199ce6
 ​
+https://medium.com/@mingc.me/deploying-pytorch-model-to-production-with-fastapi-in-cuda-supported-docker-c161cca68bb8

@@ -404,7 +404,7 @@ def train_model_with_validation(
                 history['stopped_early'] = True
                 break
         
-    torch.save(model.state_dict(), 'model.pth')
+    #torch.save(model.state_dict(), 'model.pth')
     
     if not os.path.exists(checkpoint_path):
         raise RuntimeError(f"Checkpoint not found: {checkpoint_path}")

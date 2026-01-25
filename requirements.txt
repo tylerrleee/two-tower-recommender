@@ -1,17 +1,17 @@
-# Core Data Processing
-pandas>=2.0.0
-numpy>=1.24.0
-scipy>=1.10.0
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+pydantic==2.6.0
+pydantic-settings==2.1.0
 
-# Machine Learning & Embeddings
-torch>=2.0.0
-sentence-transformers>=2.2.0
-scikit-learn>=1.2.0
+torch==2.2.0
+numpy
+pandas
+scikit-learn
+scipy==1.12.0
+sentence-transformers==2.3.1
 
-# Vector Search & Acceleration
-faiss-cpu>=1.7.0  # CPU
+faiss-cpu==1.7.4  
 
-# Utilities + runtime track
-tqdm>=4.65.0
-
-# pip3 install -r requirements.txt
+python-multipart==0.0.6 s
+python-dotenv==1.0.0
+PyYAML==6.0.1
