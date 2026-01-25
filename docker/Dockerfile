@@ -3,9 +3,9 @@ FROM python:3.14.2
 # everything runs through this workdir
 WORKDIR /app 
 
-COPY ./requirements.txt /app/requirements.txt
+COPY docker/requirements.txt .
 
-RUN pip install --no-cache-dir -r /app/requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY src/ /app/src/
 COPY api/ /app/api/

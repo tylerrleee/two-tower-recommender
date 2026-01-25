@@ -91,7 +91,7 @@ class MatchingInference:
             self.model = TwoTowerModel(
                 embedding_dim       = self.embedding_dim,
                 meta_feature_dim    = meta_feature_dim,
-                tower_hidden_dim    = [256, 128, 64],
+                tower_hidden_dims    = [256, 128, 64],
                 dropout_rate        = 0.3
             )
 
