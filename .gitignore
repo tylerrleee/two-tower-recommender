@@ -3,6 +3,7 @@ data/*
 .ipynb_checkpoints/*
 venv
 venv/*
+.env
 
 roadmap.txt
 
