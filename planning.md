@@ -133,3 +133,6 @@
     │  └─ Maximizes global compatibility
     │
     └─ Output: groups dict {mentor_idx: {mentees, scores}}
+
+
+## Front-end

@@ -39,14 +39,31 @@ class MatchingInference:
 
         self.model              : Optional[TwoTowerModel]       = None
         self.feature_engineer   : Optional[FeatureEngineer]     = None
-        self.embedding_engineer  : Optional[EmbeddingEngineer]   = None
+        self.embedding_engineer : Optional[EmbeddingEngineer]   = None
         self.matcher            : Optional[GroupMatcher]        = None
 
         self.model_metadata     : Optional[GroupMatcher]        = None
 
 
     def load_model(self) -> None:
-        """ Load trained model from checkpoint"""
+        """ Load trained model from checkpoint
+        
+        checkpoint format:
+                    checkpoint = {
+                        'epoch': epoch,
+                        'model_state_dict': model.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict(),
+                        'train_loss': train_loss,
+                        'val_loss': val_loss,
+                        'loss_type': loss_type
+                    }
+        Initiates:
+        - model_metadata : 'epoch' , 'train_loss' , 'val_loss', 'loss_type'
+        - self.feature_engingeer : FeatureEngineer
+        - self.embedding_engineer : Embedding Engineer
+        - self.model : TwoTowerModel
+        - self.matcher : GroupMatcher
+        """
 
         try:
             logger.info(f"Loading model from {self.model_path}")
@@ -60,10 +77,10 @@ class MatchingInference:
 
             # Extract metadata
             self.model_metadata = {
-                'epoch': checkpoint.get('epoch', 'unknown'),
+                'epoch'     : checkpoint.get('epoch', 'unknown'),
                 'train_loss': checkpoint.get('train_loss', None),
-                'val_loss': checkpoint.get('val_loss', None),
-                'loss_type': checkpoint.get('loss_type', 'unknown')
+                'val_loss'  : checkpoint.get('val_loss', None),
+                'loss_type' : checkpoint.get('loss_type', 'unknown')
             }
 
             logger.info(f"Model metadata: {self.model_metadata}")
@@ -81,10 +98,11 @@ class MatchingInference:
             )
 
             # Extract first layer weight
-            state_dict = checkpoint['model_state_dict']
-            first_layer_weight = state_dict['mentor_tower.0.weight']
-            input_dim = first_layer_weight.shape[1]
-            meta_feature_dim = input_dim - self.embedding_dim
+            state_dict          = checkpoint['model_state_dict']
+            first_layer_weight  = state_dict['mentor_tower.0.weight']
+
+            input_dim           = first_layer_weight.shape[1]
+            meta_feature_dim    = input_dim - self.embedding_dim
 
             logger.info(f"Inferred input_dim={input_dim}, meta_feature_dim={meta_feature_dim}")
 
@@ -247,8 +265,8 @@ class MatchingInference:
             avg_compatibility = np.mean([g['compatibility_score'] for g in formatted_groups])
             
             return {
-                'status': 'success',
-                'total_groups': len(formatted_groups),
+                'status'        : 'success',
+                'total_groups'  : len(formatted_groups),
                 'average_compatibility': float(avg_compatibility),
-                'groups': formatted_groups
+                'groups'        : formatted_groups
             }
