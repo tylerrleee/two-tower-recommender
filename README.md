@@ -4,6 +4,13 @@
 
 This system uses a Two-Tower Neural Network architecture with contrastive learning to match mentors ("Bigs") with mentees ("Littles") in university mentorship programs. By combining semantic text understanding (S-BERT), structured profile features, and objective optimization, the system generates mentor-to-mentee groups that balance compatibility and diversity.
 
+
+## TODO
+1. Connect to Database -> test API response to Atlas -> test webhook post to Atlas
+2. Connect to backend -> test multiple users 
+3. Connect backend to frontend w/ simple UI
+4. Add more analytics & viz
+
 ## Reason for this Project
 
 Traditional approaches to match 100-1000 applications rely on manual review or simple keyword matching. This system aims to:
