@@ -3,6 +3,7 @@ from unittest.mock import patch, MagicMock
 from pymongo.errors import ConnectionFailure
 
 from database.connection import MongoDBConnection, get_database
+#from database.adapter import DataAdapter
 
 class TestMongoDBConnection:
     
