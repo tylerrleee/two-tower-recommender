@@ -6,10 +6,15 @@ This system uses a Two-Tower Neural Network architecture with contrastive learni
 
 
 ## TODO
-1. Connect to Database -> test API response to Atlas -> test webhook post to Atlas
-2. Connect to backend -> test multiple users 
-3. Connect backend to frontend w/ simple UI
-4. Add more analytics & viz
+- generate_embeddings_with_cache(Data Ingestion Scaffold (CSV → MongoDB)
+- Applied CRUD Operations
+-- CREATE: Insert New Mentor Application
+-- READ: Find Unmatched Applicants for a Semester
+-- UPDATE: Save Computed S-BERT Embedding
+-- DELETE: Remove Test Application
+-Integration Testing Script : Integration tests for MongoDB adapter with ML pipeline.
+- scripts/init_db.py  # Initialize MongoDB with indexes and test data.
+
 
 ## Reason for this Project
 

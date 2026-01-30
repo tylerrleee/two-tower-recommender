@@ -1,6 +1,5 @@
 """
 python3 -m pytest tests/test_adapter.py"""
-
 from database.adapter import DataAdapter
 import pytest
 from unittest.mock import patch, MagicMock
@@ -142,6 +141,101 @@ class TestDataAdapter:
         assert flat[0]["status"] == "pending"
         # Should un-nest survey responses
         assert flat[0]["gym_freq"] == 5
+
+class TestEmbeddingsPersistence:
+    """
+    Tests for save_sbert_embeddings and save_learned_embeddings in database/adapter.py
+    """
+
+    @pytest.fixture
+    def mock_db(self):
+        return MagicMock()
+
+    @pytest.fixture
+    def adapter(self, mock_db):
+        adapter = DataAdapter(db=mock_db)
+        adapter.current_semester_id = ObjectId("507f1f77bcf86cd799439011") 
+        return adapter
+
+    def test_save_sbert_embeddings_success(self, adapter, mock_db):
+        """Test batch saving of S-BERT embeddings with successful updates."""
+        
+        # 1. Setup Data
+        embeddings_data = [
+            {"applicant_id": "507f1f77bcf86cd799439012", "embedding": [0.1, 0.2]},
+            {"applicant_id": "507f1f77bcf86cd799439013", "embedding": [0.3, 0.4]}
+        ]
+
+        # 2. Mock MongoDB Response (Simulate both updates succeeding)
+        mock_result = MagicMock()
+        mock_result.modified_count = 1
+        mock_db.applicants.update_one.return_value = mock_result
+
+        # 3. Action
+        updated_count = adapter.save_sbert_embeddings(embeddings_data)
+
+        # 4. Assertions
+        assert updated_count == 2
+        assert mock_db.applicants.update_one.call_count == 2
+        
+        # Validate the first call structure
+        # We need to check: query filter, update operator, and array_filters
+        first_call = mock_db.applicants.update_one.call_args_list[0]
+        args, kwargs = first_call
+        
+        # args[0] is the filter query
+        assert args[0] == {"_id": ObjectId("507f1f77bcf86cd799439012")}
+        
+        # args[1] is the update operation ($set)
+        update_op = args[1]["$set"]
+        assert update_op["applications.$[elem].embeddings.sbert_384"] == [0.1, 0.2]
+        assert update_op["applications.$[elem].embeddings.sbert_model_version"] == "all-MiniLM-L6-v2"
+        
+        # kwargs['array_filters'] ensures we update the specific semester
+        assert kwargs["array_filters"] == [
+            {"elem.semester_id": adapter.current_semester_id}
+        ]
+
+    def test_save_sbert_partial_failure(self, adapter, mock_db):
+        """Test correct counting when some updates fail (modified_count=0)."""
+        embeddings_data = [
+            {"applicant_id": "507f1f77bcf86cd799439012", "embedding": [0.1]},
+            {"applicant_id": "507f1f77bcf86cd799439013", "embedding": [0.2]}
+        ]
+        
+        # Simulate: First succeeds, Second fails (e.g., document not found)
+        success_result = MagicMock()
+        success_result.modified_count = 1
+        
+        fail_result = MagicMock()
+        fail_result.modified_count = 0
+        
+        mock_db.applicants.update_one.side_effect = [success_result, fail_result]
+        
+        count = adapter.save_sbert_embeddings(embeddings_data)
+        
+        assert count == 1 # Only 1 succeeded
+
+    def test_save_learned_embeddings(self, adapter, mock_db):
+        """Test saving learned 64-dim embeddings and checkpoint metadata."""
+        
+        embeddings_data = [
+            {"applicant_id": "507f1f77bcf86cd799439012", "embedding": [0.99] * 64}
+        ]
+        checkpoint_path = "models/best_model_v1.pt"
+        
+        mock_result = MagicMock()
+        mock_result.modified_count = 1
+        mock_db.applicants.update_one.return_value = mock_result
+        
+        adapter.save_learned_embeddings(embeddings_data, checkpoint_path)
+        
+        # Check that the specific 'learned' fields are set
+        call_args = mock_db.applicants.update_one.call_args
+        update_op = call_args[0][1]["$set"]
+        
+        assert "applications.$[elem].embeddings.learned_64" in update_op
+        assert update_op["applications.$[elem].embeddings.learned_model_checkpoint"] == checkpoint_path
 
 if __name__ == '__main__':
 

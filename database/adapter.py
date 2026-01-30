@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np
 from bson import ObjectId
 from pymongo.database import Database
-from datetime import datetime
+import datetime
 import logging
 
 from database.connection import get_database
@@ -230,3 +230,100 @@ class DataAdapter:
                 f"Missing required columns. "
                 f"Mentors: {missing_mentor}, Mentees: {missing_mentee}"
             )
+
+    def save_sbert_embeddings(
+                    self, 
+                    embeddings_data: List[Dict[str, any]]
+                ) -> int:
+        """
+        Batch save computed S-BERT embeddings back to MongoDB.
+                
+        Args:
+            embeddings_data: List of dicts with keys:
+                - applicant_id: str (MongoDB ObjectId string)
+                - embedding: List[float] (384-dim array)
+        
+        Returns:
+            Number of successfully updated documents
+            
+        Example:
+            >>> adapter.save_sbert_embeddings([
+            ...     {"applicant_id": "67a1...", "embedding": [0.1, 0.2, ...]},
+            ...     {"applicant_id": "67a2...", "embedding": [0.3, 0.4, ...]}
+            ... ])
+            2
+        """
+        logger.info(f"Saving {len(embeddings_data)} S-BERT embeddings...")
+        
+        updated_count = 0
+        
+        for data in embeddings_data:
+            result = self.db.applicants.update_one(
+                {
+                    "_id": ObjectId(data["applicant_id"])
+                },
+                {
+                    "$set": {
+                        "applications.$[elem].embeddings.sbert_384": data["embedding"],
+                        "applications.$[elem].embeddings.sbert_computed_at": datetime.datetime.now(datetime.UTC),
+                        "applications.$[elem].embeddings.sbert_model_version": "all-MiniLM-L6-v2"
+                    }
+                },
+                array_filters=[
+                    {"elem.semester_id": self.current_semester_id}
+                ]
+            )
+            
+            if result.modified_count > 0:
+                updated_count += 1
+        
+        logger.info(f"Updated {updated_count}/{len(embeddings_data)} embeddings")
+        
+        return updated_count
+    
+    def save_learned_embeddings(
+                    self, 
+                    embeddings_data: List[Dict[str, any]],
+                    model_checkpoint: str
+                ) -> int:
+        """
+        Batch save learned 64-dim embeddings from TwoTowerModel.
+        
+        This implements generate_mentor_embedding step storage.
+        
+        Args:
+            embeddings_data: List of dicts with keys:
+                - applicant_id: str
+                - embedding: List[float] (64-dim array)
+            model_checkpoint: Path to saved model weights
+        
+        Returns:
+            Number of successfully updated documents
+        """
+        logger.info(f" Saving {len(embeddings_data)} learned embeddings...")
+        
+        updated_count = 0
+        
+        for data in embeddings_data:
+            result = self.db.applicants.update_one(
+                {
+                    "_id": ObjectId(data["applicant_id"])
+                },
+                {
+                    "$set": {
+                        "applications.$[elem].embeddings.learned_64": data["embedding"],
+                        "applications.$[elem].embeddings.learned_computed_at": datetime.datetime.now(datetime.UTC),
+                        "applications.$[elem].embeddings.learned_model_checkpoint": model_checkpoint
+                    }
+                },
+                array_filters=[
+                    {"elem.semester_id": self.current_semester_id}
+                ]
+            )
+            
+            if result.modified_count > 0:
+                updated_count += 1
+        
+        logger.info(f"Updated {updated_count}/{len(embeddings_data)} learned embeddings")
+        
+        return updated_count

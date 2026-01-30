@@ -1,10 +1,14 @@
 from sentence_transformers import SentenceTransformer
 import numpy as np
 import os
-from typing import Optional, List
+from typing import Tuple, Optional, List
 import faiss
 from scipy.optimize import linear_sum_assignment
+import logging
+import pandas as pd
+from database.adapter import DataAdapter
 
+logger = logging.getLogger(__name__)
 
 class EmbeddingEngineer:
     def __init__(self,
@@ -150,5 +154,19 @@ class EmbeddingEngineer:
          distances, indices = self.index.search(query_vector, top_k)
          
          return distances, indices
-    # Save model metadata & pipeline config
+    
+    def generate_embeddings_with_cache(
+            mentor_data: pd.DataFrame,
+            mentee_data: pd.DataFrame,
+            db_adapter: DataAdapter
+        ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Generate embeddings with MongoDB caching (Step 3 with cache).
         
+        Flow:
+        1. Check if S-BERT embeddings exist in DataFrame (from DB)
+        2. Compute missing embeddings
+        3. Save new embeddings back to MongoDB
+        4. Concatenate text + meta features
+        """
+        ...
