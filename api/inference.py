@@ -6,7 +6,8 @@ import logging
 from pathlib import Path
 from functools import lru_cache
 import hashlib
-
+import datetime
+import re
 
 from src.features import FeatureEngineer
 from src.embedding import EmbeddingEngineer
@@ -127,12 +128,30 @@ class MatchingInference:
                 diversity_weight     = 0.4
             )
 
+            self.model_metadata.update({
+            'model_path': str(self.model_path),
+            'loaded_at': datetime.datetime.now(datetime.UTC).isoformat(),
+            'version': self._infer_model_version()
+        })
+            
             logger.info("Model loaded done.")
 
         except Exception as e:
             logger.error(f"Failed to load model: {e}")
             raise
     
+    def _infer_model_version(self) -> str:
+        """Extract model version from checkpoint"""
+        # Check if model path contains version
+        # e.g., "models/best_model_v2.1.0.pt"
+
+        match = re.search(r'v(\d+\.\d+\.\d+)', str(self.model_path))
+        if match:
+            return match.group(1)
+        
+        # Fallback: Use training date
+        return f"1.0.{self.model_metadata.get('epoch', 0)}"
+
     def _compute_df_hash(self, df: pd.DataFrame) -> str:
         """ Generate hash of DataFrame for cache key"""
         # Calculate hash values for dataframe | each hashed int is a series/df_row
