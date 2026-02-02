@@ -26,5 +26,6 @@ pytest
 # unittest included in standard lib
 
 # Auth
+python-jose
 python-jose[cryptography]
 passlib       # hasing algo

@@ -21,7 +21,7 @@ from api.exceptions import (
 )
 from api.auth import (
     get_current_user, RoleChecker, PermissionChecker,
-    create_access_token, verify_password, Token
+    create_access_token, verify_password, Token, UserInDB
 )
 
 from database.connection import get_database
@@ -188,6 +188,7 @@ async def login(
         access_token=access_token,
         token_type = "bearer",
         expires_in = ACCESS_TOKEN_EXPIRE_MINUTES * 60 # TODO add to config
+        )
 
 @app.get("/auth/me", tags=["Authentication"])
 async def get_current_user_info(user: UserInDB = Depends(get_current_user)):
@@ -214,11 +215,22 @@ async def get_current_user_info(user: UserInDB = Depends(get_current_user)):
         "permissions"       : user.permissions
     }
 
+# -- EP w/ Auth
 
-async def batch_matching(request: BatchMatchingRequest):
+@app.post(
+    "/match/batch",
+    response_model=MatchingResponse,
+    tags=["Matching"],
+    dependencies=[Depends(PermissionChecker("can_trigger_matching"))]  
+    )
+
+async def batch_matching(request: BatchMatchingRequest,
+                         user: UserInDB = Depends(get_current_user)
+                         ):
     """
     Generate optimal mentor-mentee matches from batch applicant data
-    
+    Authorization: Bearer <jwt_token>
+
     - **applicants**: List of applicant data (mentors + mentees)
     - **use_faiss**: Use FAISS for faster approximate matching
     - **top_k**: Number of candidates for FAISS (5-50)
@@ -227,8 +239,10 @@ async def batch_matching(request: BatchMatchingRequest):
         raise ModelNotLoadedException()
     
     try:
-        logger.info(f"Received batch matching request: {len(request.applicants)} applicants")
-        
+        logger.info(
+            f"User {user.email} (org: {user.organization_id}) triggered matching "
+            f"with {len(request.applicants)} applicants"
+        )        
         # Convert to DataFrame
         df = pd.DataFrame([app.model_dump() for app in request.applicants])
         
