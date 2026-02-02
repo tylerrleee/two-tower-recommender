@@ -1,7 +1,9 @@
 """
 MongoDB connection manager
-1. TODO Connection pooling : caching embeddings so we don't recompute everytime (BERT)
-2. TODO error handling
+
+- Creates a single instance of MongoDB connection
+-- Atlas has connection limits so our goal is to limit & timeout failed connections
+- Auto fileover
 """
 
 import os 
@@ -10,6 +12,8 @@ from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure, ConfigurationError
 from pymongo.database import Database
 import logging
+import db_config
+
 
 logger = logging.getLogger(__name__)
 
@@ -50,12 +54,12 @@ class MongoDBConnection:
 
             self._client = MongoClient(
                 connection_string,
-                maxPoolSize = 50,
-                minPoolSize = 10,
-                maxIdleTimeMS = 45000,
-                serverSelectionTimeoutMS = 5000,
-                connectTimeoutMS = 10000,
-                socketTimeoutMS = 20000
+                maxPoolSize              = db_config.maxPoolSize,
+                minPoolSize              = db_config.minPoolSize,
+                maxIdleTimeMS            = db_config.maxIdleTimeMS,
+                serverSelectionTimeoutMS = db_config.serveSelectionTimeoutMS,
+                connectTimeoutMS         = db_config.connectTimeoutMS,
+                socketTimeoutMS          = db_config.socketTimeoutMS
             )
             # Test connection
             self._client.admin.command('ping')
@@ -97,7 +101,7 @@ class MongoDBConnection:
 
 def get_database() -> Database:
     """
-    get active MongoDB database instance.
+    get an instance of MongoDB database instance.
 
     Returns:
         Database: PyMongo Database object
@@ -111,7 +115,7 @@ def get_database() -> Database:
 
 def close_connection() -> None:
     """ Close MongoDB connection (call on app shutdown)"""
-    _mongo_connection.close()
+    MongoDBConnection().close()
 
 if __name__ == '__main__':
     _mongo_connection = MongoDBConnection()

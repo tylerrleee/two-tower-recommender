@@ -1,6 +1,8 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File, status
+from fastapi import FastAPI, HTTPException, UploadFile, File, status, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.security import OAuth2PasswordRequestForm
+
 import pandas as pd
 import logging
 from datetime import datetime
@@ -17,6 +19,12 @@ from api.exceptions import (
     ModelNotLoadedException, InsufficientDataException,
     MatchingFailedException, InvalidCSVException
 )
+from api.auth import (
+    get_current_user, RoleChecker, PermissionChecker,
+    create_access_token, verify_password, Token
+)
+
+from database.connection import get_database
 
 # LOGGING CONFIG
 logging.basicConfig(
@@ -28,6 +36,7 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
 
 # GLOBAL STATE
 inference_engine: MatchingInference = None
@@ -86,17 +95,22 @@ async def global_exception_handler( request, exc):
         }
     )
 
-# Engpoints
+# ENDPOINTS
 
+## ROOT
 @app.get("/", tags = ["Root"])
 async def root():
     """ Root Endpoint"""
     return {
         "message" : "Mentor-Mentee Matching API",
-        "version" : "1.0.0",
+        "version" : "6.7.0",
         "docs"    : "/docs"
     }
-@app.get("/health", response_model=HealthCheckResponse, tags=["Health"])
+    
+## HEALTH
+@app.get("/health", 
+         response_model=HealthCheckResponse, 
+         tags=["Health"])
 async def health_check():
     """Health check endpoint"""
     return HealthCheckResponse(
@@ -106,6 +120,7 @@ async def health_check():
         timestamp=datetime.utcnow().isoformat()
     )
 
+# MATCHING
 @app.post(
     "/match/batch",
     response_model=MatchingResponse,
@@ -117,6 +132,88 @@ async def health_check():
         503: {"model": ErrorResponse}
     }
 )
+
+## AUTH
+@app.post("/auth/login", response_model=Token, tags=["Authentication"])
+async def login(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db = Depends(get_database)
+):
+    """
+    Login endpoint - returns JWT token
+    
+    Request body (form-data):
+    - username: user@example.com (email)
+    - password: secret123
+    
+    Response:
+    {
+      "access_token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
+      "token_type": "bearer",
+      "expires_in": 86400
+    }
+    """
+    # Find user
+    user = db.users.find_one({"email": form_data.username})
+    
+    if not user or not verify_password(form_data.password, user["hashed_password"]):
+        raise HTTPException(
+            status_code = status.HTTP_401_UNAUTHORIZED,
+            detail      = "Incorrect email or password",
+            headers     = {"WWW-Authenticate": "Bearer"},
+        )
+    
+    if not user.get("is_active", False):
+        raise HTTPException(
+            status_code = status.HTTP_403_FORBIDDEN,
+            detail      = "Account is disabled"
+        )
+
+    # Create token
+    access_token = create_access_token(
+        data={
+            "sub": user["email"],
+            "organization_id": str(user["organization_id"]),
+            "role": user["role"]
+        }
+    )
+    
+    # Update last login
+    db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"last_login":  datetime.datetime.now(datetime.UTC)}}
+    )
+    
+    return Token(
+        access_token=access_token,
+        token_type = "bearer",
+        expires_in = ACCESS_TOKEN_EXPIRE_MINUTES * 60 # TODO add to config
+
+@app.get("/auth/me", tags=["Authentication"])
+async def get_current_user_info(user: UserInDB = Depends(get_current_user)):
+    """
+    Get current authenticated user info
+    
+    Headers:
+    Authorization: Bearer <token>
+    
+    Response:
+    {
+      "email": "coordinator@ufl.edu",
+      "full_name": "Jane Doe",
+      "role": "coordinator",
+      "organization_id": "67a1...",
+      "permissions": {...}
+    }
+    """
+    return {
+        "email"             : user.email,
+        "full_name"         : user.full_name,
+        "role"              : user.role,
+        "organization_id"   : user.organization_id,
+        "permissions"       : user.permissions
+    }
+
 
 async def batch_matching(request: BatchMatchingRequest):
     """
