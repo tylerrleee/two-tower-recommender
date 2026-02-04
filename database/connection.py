@@ -12,8 +12,7 @@ from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure, ConfigurationError
 from pymongo.database import Database
 import logging
-import db_config
-
+from database import db_config
 
 logger = logging.getLogger(__name__)
 
