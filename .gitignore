@@ -17,3 +17,5 @@ vso_ratataou_ace_mock_data.csv
 __pycache__
 *.ipynb_checkpoints
 .DS_Store
+
+task_definition.json
