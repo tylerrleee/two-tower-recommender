@@ -31,10 +31,6 @@ from api.services.matching_service import MatchingService, JobStatus
 from api.services.feedback_service import FeedbackService
 
 
-# ============================================================================
-# FIXTURES
-# ============================================================================
-
 @pytest.fixture
 def mock_db():
     """Mock MongoDB database"""

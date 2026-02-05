@@ -1,5 +1,12 @@
 """
-Semester Router - Semester management endpoints
+Semester Router 
+
+# Endpoints:
+
+POST   /semesters/                    # Create semester
+GET    /semesters/                    # List semesters
+GET    /semesters/{semester_id}/stats # Get statistics
+
 """
 
 from fastapi import APIRouter, HTTPException, status, Depends
