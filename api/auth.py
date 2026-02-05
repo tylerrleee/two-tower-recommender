@@ -14,8 +14,6 @@ from database.connection import get_database
 # TODO update .env for these configs
 
 SECRET_KEY = os.getenv("JWT_SECRET_KEY")
-if not SECRET_KEY:
-    raise ValueError("No JWT_SECRET_KEY set for Flask application")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 # 24h
 

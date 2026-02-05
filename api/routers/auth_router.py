@@ -32,6 +32,7 @@ from api.auth import (
 )
 
 from api.dependencies import DatabaseDep
+# DatabaseDep = Annotated[Database, Depends(get_database)]
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -81,8 +82,9 @@ class ChangePasswordRequest(BaseModel):
     description     = "Authenticate user and return JWT token"
 )
 async def login(
+    db: DatabaseDep,
     form_data: OAuth2PasswordRequestForm = Depends(),
-    db: DatabaseDep = Depends()
+
 ):
     """
     User login
@@ -151,7 +153,7 @@ async def login(
 )
 async def register_user(
     request: UserRegisterRequest,
-    db: DatabaseDep = Depends()
+    db: DatabaseDep
 ):
     """
     Register new user
@@ -305,7 +307,7 @@ async def refresh_token(
 )
 async def change_password(
     request: ChangePasswordRequest,
-    db: DatabaseDep = Depends(),
+    db: DatabaseDep,
     user: UserInDB = Depends(get_current_user)
 ):
     """

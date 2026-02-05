@@ -27,9 +27,8 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-# ============================================================================
+
 # PYDANTIC MODELS
-# ============================================================================
 
 class CSVUploadResponse(BaseModel):
     """Response model for CSV upload"""
@@ -85,10 +84,10 @@ class ApplicantListResponse(BaseModel):
     description="Bulk upload applicants for a semester via CSV file"
 )
 async def upload_applicants_csv(
+    applicant_service: ApplicantServiceDep,
+    semester_service: SemesterServiceDep,
     semester_id: str = Query(..., description="Target semester ID"),
     file: UploadFile = File(..., description="CSV file with applicant data"),
-    applicant_service: ApplicantServiceDep = Depends(),
-    semester_service: SemesterServiceDep = Depends(),
     user: UserInDB = Depends(get_current_user)
 ):
     """
@@ -189,12 +188,12 @@ async def upload_applicants_csv(
     description="Get list of applicants with optional role filter"
 )
 async def list_applicants(
+    applicant_service: ApplicantServiceDep,
+    semester_service: SemesterServiceDep,
     semester_id: str = Query(..., description="Semester ID"),
     role: Optional[str] = Query(None, description="Filter by role: mentor or mentee"),
     skip: int = Query(0, ge=0, description="Pagination offset"),
     limit: int = Query(100, ge=1, le=500, description="Max results (max 500)"),
-    applicant_service: ApplicantServiceDep = Depends(),
-    semester_service: SemesterServiceDep = Depends(),
     user: UserInDB = Depends(get_current_user)
 ):
     """
@@ -254,10 +253,10 @@ async def list_applicants(
     description="Get detailed information for a specific applicant"
 )
 async def get_applicant(
+    applicant_service: ApplicantServiceDep,
+    semester_service: SemesterServiceDep,
     applicant_id: str,
     semester_id: str = Query(..., description="Semester ID"),
-    applicant_service: ApplicantServiceDep = Depends(),
-    semester_service: SemesterServiceDep = Depends(),
     user: UserInDB = Depends(get_current_user)
 ):
     """
@@ -306,11 +305,11 @@ async def get_applicant(
     description="Update applicant survey responses"
 )
 async def update_applicant(
+    applicant_service: ApplicantServiceDep,
+    semester_service: SemesterServiceDep,
     applicant_id: str,
     semester_id: str = Query(..., description="Semester ID"),
     request: ApplicantUpdateRequest = ...,
-    applicant_service: ApplicantServiceDep = Depends(),
-    semester_service: SemesterServiceDep = Depends(),
     user: UserInDB = Depends(get_current_user)
 ):
     """
@@ -368,10 +367,10 @@ async def update_applicant(
     description="Remove applicant's application for a specific semester"
 )
 async def delete_applicant(
+    applicant_service: ApplicantServiceDep,
+    semester_service: SemesterServiceDep,
     applicant_id: str,
     semester_id: str = Query(..., description="Semester ID"),
-    applicant_service: ApplicantServiceDep = Depends(),
-    semester_service: SemesterServiceDep = Depends(),
     user: UserInDB = Depends(get_current_user)
 ):
     """
@@ -413,10 +412,10 @@ async def delete_applicant(
     description="Dry-run CSV validation to check for errors before actual upload"
 )
 async def validate_csv_file(
+    applicant_service: ApplicantServiceDep,
+    semester_service: SemesterServiceDep,
     semester_id: str = Query(..., description="Target semester ID"),
     file: UploadFile = File(..., description="CSV file to validate"),
-    applicant_service: ApplicantServiceDep = Depends(),
-    semester_service: SemesterServiceDep = Depends(),
     user: UserInDB = Depends(get_current_user)
 ):
     """

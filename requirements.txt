@@ -29,6 +29,7 @@ mongomock==4.1.2  # mocking MongoDB
 pytest-cov==4.1.0
 pytest-mock==3.12.0
 pytest-asyncio==0.21.1
+pytest-env
 # Mocking and assertions
 unittest-xml-reporting==3.2.0
 
@@ -44,5 +45,5 @@ responses==0.24.1  # Mock HTTP responses
 # Auth
 python-jose
 python-jose[cryptography]
-passlib       # hasing algo
-
+passlib==1.7.4      # hasing algo
+bcrypt==3.2.2
