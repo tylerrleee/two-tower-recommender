@@ -6,10 +6,6 @@ A production-ready neural matching system that automatically pairs mentors with 
 
 This system addresses the scalability challenge in mentor-mentee matching programs where manual review becomes infeasible beyond 300 applicants. By combining natural language processing (S-BERT), structured profile features, and global optimization (Hungarian algorithm), the system generates optimal 1:2 mentor-to-mentee groups that maximize compatibility while maintaining diversity.
 
-## Transparency
-
-** Claude Code was used throughout the implementation. **
-
 ** Related Projects & References are at the bottom. **
 
 **Key Features:**
