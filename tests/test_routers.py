@@ -34,7 +34,7 @@ from api.routers import (
     feedback_router
 )
 from api.auth import UserInDB, get_current_user
-from api.dependencies import get_database, get_organization_service
+from api.dependencies import *
 # FIXTURES
 
 @pytest.fixture
@@ -90,7 +90,7 @@ def sample_user_data(sample_org_id):
         "full_name": "Test Coordinator",
         "hashed_password": "$2b$12$KIX.7JhCkY8d.8vK9XqZNe5L0iJx0y4JmVZH0x8k9E0JqZvG4WvQS",  # "testpass123"
         "organization_id": ObjectId(sample_org_id),
-        "role": "coordinator",
+        "role": "admin",
         "is_active": True,
         "permissions": {
             "can_upload_applicants": True,
@@ -114,6 +114,8 @@ def sample_jwt_token():
 def auth_headers(sample_jwt_token):
     """Authentication headers"""
     return {"Authorization": f"Bearer {sample_jwt_token}"}
+
+
 
 
 # TEST: AuthRouter
@@ -349,24 +351,33 @@ class TestOrganizationRouter:
         finally:
             client.app.dependency_overrides = {}
 
-## TODO VERIFY THIS TEST WORKS
     @patch('api.auth.get_current_user')
     @patch('api.dependencies.get_organization_service')
+    @patch('api.auth.SECRET_KEY', 'a_very_secure_test_secret_key')
     def test_get_organization_stats(self, mock_get_service, mock_get_user, client, mock_db, auth_headers, sample_org_id):
         """Test getting organization statistics"""
+
+        mock_user = UserInDB(
+            email="admin@test.com",
+            hashed_password="dummy_hash_for_test",
+            full_name="Admin User",
+            organization_id=sample_org_id,
+            role="admin",
+            is_active=True,
+            permissions={"can_create_semester": True}
+        )
+
+        # Create the Mock Service
+        mock_service = Mock()
+        new_org_id = str(ObjectId())
+        mock_service.create_organization.return_value = new_org_id
+
         client.app.dependency_overrides[get_database] = lambda: mock_db
+        client.app.dependency_overrides[get_current_user] = lambda: mock_user
+        client.app.dependency_overrides[get_organization_service] = lambda: mock_service
         
         try:
-            mock_get_user.return_value = UserInDB(
-                email="test@test.com",
-                hashed_password="dummy_hash_for_test",  
-                full_name="Test User",
-                organization_id=sample_org_id,
-                role="coordinator",
-                is_active=True,
-                permissions={},
-                created_at=datetime.now(timezone.utc)
-            )
+            #mock_get_user.return_value = mock_admin(sample_org_id)
             
             # Mock service stats logic
             mock_service = Mock()
@@ -401,13 +412,12 @@ class TestOrganizationRouter:
 class TestSemesterRouter:
     """Integration tests for semester_router"""
     
-    @patch('api.auth.get_current_user')
-    @patch('api.dependencies.get_semester_service')
-    def test_create_semester(self, mock_get_service, mock_get_user, client, auth_headers, sample_org_id):
+    def test_create_semester(self, client, mock_db, auth_headers, sample_org_id):
         """Test creating semester"""
-        from api.auth import UserInDB
-        mock_get_user.return_value = UserInDB(
+        
+        mock_user = UserInDB(
             email="coordinator@test.com",
+            hashed_password="dummy_hash_for_test", 
             full_name="Test Coordinator",
             organization_id=sample_org_id,
             role="coordinator",
@@ -416,7 +426,6 @@ class TestSemesterRouter:
             created_at=datetime.now(timezone.utc)
         )
         
-        # Mock service
         mock_service = Mock()
         semester_id = str(ObjectId())
         mock_service.create_semester.return_value = semester_id
@@ -426,32 +435,41 @@ class TestSemesterRouter:
             "status": "draft",
             "created_at": datetime.now(timezone.utc)
         }
-        mock_get_service.return_value = mock_service
         
-        response = client.post(
-            "/semesters",
-            headers=auth_headers,
-            json={
-                "name": "Fall 2024",
-                "start_date": "2024-08-26T00:00:00Z",
-                "end_date": "2024-12-15T23:59:59Z",
-                "mentor_quota": 150,
-                "mentee_quota": 300
-            }
-        )
+        # Override client dependencies
+        client.app.dependency_overrides[get_database] = lambda: mock_db
+        client.app.dependency_overrides[get_current_user] = lambda: mock_user
+        client.app.dependency_overrides[get_semester_service] = lambda: mock_service
         
-        assert response.status_code == 201
-        data = response.json()
-        assert data["name"] == "Fall 2024"
-        assert data["status"] == "draft"
+        try:
+            response = client.post(
+                "/semesters/", 
+                headers=auth_headers,
+                json={
+                    "name": "Fall 2024",
+                    "start_date": "2024-08-26T00:00:00Z",
+                    "end_date": "2024-12-15T23:59:59Z",
+                    "mentor_quota": 150,
+                    "mentee_quota": 300
+                }
+            )
+            
+            assert response.status_code == 201
+            data = response.json()
+            assert data["name"] == "Fall 2024"
+            assert data["status"] == "draft"
+            
+        finally:
+            client.app.dependency_overrides = {}
     
-    @patch('api.auth.get_current_user')
-    @patch('api.dependencies.get_semester_service')
-    def test_list_semesters(self, mock_get_service, mock_get_user, client, auth_headers, sample_org_id):
+    def test_list_semesters(self, client, mock_db, auth_headers, sample_org_id):
         """Test listing semesters"""
-        from api.auth import UserInDB
-        mock_get_user.return_value = UserInDB(
+
+        
+        # Define mock_user
+        mock_user = UserInDB(
             email="test@test.com",
+            hashed_password="dummy_hash_for_test",
             full_name="Test User",
             organization_id=sample_org_id,
             role="coordinator",
@@ -460,7 +478,7 @@ class TestSemesterRouter:
             created_at=datetime.now(timezone.utc)
         )
         
-        # Mock service
+        # Create mock service
         mock_service = Mock()
         mock_service.list_semesters.return_value = [
             {
@@ -476,22 +494,31 @@ class TestSemesterRouter:
                 "status": "draft"
             }
         ]
-        mock_get_service.return_value = mock_service
         
-        response = client.get("/semesters", headers=auth_headers)
+        # Override client dependencies
+        client.app.dependency_overrides[get_database] = lambda: mock_db
+        client.app.dependency_overrides[get_current_user] = lambda: mock_user
+        client.app.dependency_overrides[get_semester_service] = lambda: mock_service
         
-        assert response.status_code == 200
-        data = response.json()
-        assert data["count"] == 2
-        assert len(data["semesters"]) == 2
+        # Try/Finally block
+        try:
+            response = client.get("/semesters/", headers=auth_headers)
+            
+            assert response.status_code == 200
+            data = response.json()
+            assert data["count"] == 2
+            assert len(data["semesters"]) == 2
+            
+        finally:
+            client.app.dependency_overrides = {}
     
-    @patch('api.auth.get_current_user')
-    @patch('api.dependencies.get_semester_service')
-    def test_get_semester_stats(self, mock_get_service, mock_get_user, client, auth_headers, sample_org_id):
+    def test_get_semester_stats(self, client, mock_db, auth_headers, sample_org_id):
         """Test getting semester statistics"""
-        from api.auth import UserInDB
-        mock_get_user.return_value = UserInDB(
+        
+        # Define mock_user
+        mock_user = UserInDB(
             email="test@test.com",
+            hashed_password="dummy_hash_for_test",
             full_name="Test User",
             organization_id=sample_org_id,
             role="coordinator",
@@ -502,7 +529,7 @@ class TestSemesterRouter:
         
         semester_id = str(ObjectId())
         
-        # Mock service
+        # Create mock service
         mock_service = Mock()
         mock_service.get_semester_stats.return_value = {
             "total_applicants": 450,
@@ -516,15 +543,23 @@ class TestSemesterRouter:
                 "mentees": 1.0
             }
         }
-        mock_get_service.return_value = mock_service
         
-        response = client.get(f"/semesters/{semester_id}/stats", headers=auth_headers)
+        # Override client dependencies
+        client.app.dependency_overrides[get_database] = lambda: mock_db
+        client.app.dependency_overrides[get_current_user] = lambda: mock_user
+        client.app.dependency_overrides[get_semester_service] = lambda: mock_service
         
-        assert response.status_code == 200
-        data = response.json()
-        assert data["total_applicants"] == 450
-        assert data["matched_groups"] == 150
-
+        # Try/Finally block
+        try:
+            response = client.get(f"/semesters/{semester_id}/stats", headers=auth_headers)
+            
+            assert response.status_code == 200
+            data = response.json()
+            assert data["total_applicants"] == 450
+            assert data["matched_groups"] == 150
+            
+        finally:
+            client.app.dependency_overrides = {}
 
 # ============================================================================
 # TEST: ApplicantRouter
@@ -533,14 +568,13 @@ class TestSemesterRouter:
 class TestApplicantRouter:
     """Integration tests for applicant_router"""
     
-    @patch('api.auth.get_current_user')
-    @patch('api.dependencies.get_applicant_service')
-    @patch('api.dependencies.get_semester_service')
-    def test_upload_csv(self, mock_sem_service, mock_app_service, mock_get_user, client, auth_headers, sample_org_id):
+    def test_upload_csv(self, client, mock_db, auth_headers, sample_org_id):
         """Test CSV upload"""
-        from api.auth import UserInDB
-        mock_get_user.return_value = UserInDB(
+        
+        # 1. Define mock_user (Coordinator with upload permissions)
+        mock_user = UserInDB(
             email="coordinator@test.com",
+            hashed_password="dummy_hash_for_test",
             full_name="Test Coordinator",
             organization_id=sample_org_id,
             role="coordinator",
@@ -551,15 +585,15 @@ class TestApplicantRouter:
         
         semester_id = str(ObjectId())
         
-        # Mock semester service
+        # 2. Create mock services
+        # Mock Semester Service
         mock_sem = Mock()
         mock_sem.get_semester.return_value = {
             "_id": semester_id,
-            "status": "active"
+            "status": "active" # Must be active or draft to allow upload
         }
-        mock_sem_service.return_value = mock_sem
         
-        # Mock applicant service
+        # Mock Applicant Service
         mock_app = Mock()
         mock_app.upload_applicants.return_value = {
             "total_uploaded": 6,
@@ -568,31 +602,41 @@ class TestApplicantRouter:
             "duplicates_skipped": 0,
             "errors": None
         }
-        mock_app_service.return_value = mock_app
+        mock_app.validate_csv.return_value = (True, []) # Ensure validation passes if called
         
-        # Create test CSV
-        csv_content = b"role,name,ufl_email,major,year\n0,Alice,alice@ufl.edu,CS,Junior\n1,Bob,bob@ufl.edu,Bio,Senior"
+        # 3. Override client dependencies
+        client.app.dependency_overrides[get_database] = lambda: mock_db
+        client.app.dependency_overrides[get_current_user] = lambda: mock_user
+        client.app.dependency_overrides[get_semester_service] = lambda: mock_sem
+        client.app.dependency_overrides[get_applicant_service] = lambda: mock_app
         
-        response = client.post(
-            f"/applicants/upload?semester_id={semester_id}",
-            headers=auth_headers,
-            files={"file": ("test.csv", BytesIO(csv_content), "text/csv")}
-        )
-        
-        assert response.status_code == 201
-        data = response.json()
-        assert data["total_uploaded"] == 6
-        assert data["mentors"] == 2
-        assert data["mentees"] == 4
+        # 4. Try/Finally block
+        try:
+            # Create test CSV
+            csv_content = b"role,name,ufl_email,major,year\n0,Alice,alice@ufl.edu,CS,Junior\n1,Bob,bob@ufl.edu,Bio,Senior"
+            
+            response = client.post(
+                f"/applicants/upload?semester_id={semester_id}",
+                headers=auth_headers,
+                files={"file": ("test.csv", BytesIO(csv_content), "text/csv")}
+            )
+            
+            assert response.status_code == 201
+            data = response.json()
+            assert data["total_uploaded"] == 6
+            assert data["mentors"] == 2
+            assert data["mentees"] == 4
+            
+        finally:
+            client.app.dependency_overrides = {}
     
-    @patch('api.auth.get_current_user')
-    @patch('api.dependencies.get_applicant_service')
-    @patch('api.dependencies.get_semester_service')
-    def test_list_applicants(self, mock_sem_service, mock_app_service, mock_get_user, client, auth_headers, sample_org_id):
+    def test_list_applicants(self, client, mock_db, auth_headers, sample_org_id):
         """Test listing applicants"""
-        from api.auth import UserInDB
-        mock_get_user.return_value = UserInDB(
+
+        # Define mock_user
+        mock_user = UserInDB(
             email="test@test.com",
+            hashed_password="dummy_hash_for_test",
             full_name="Test User",
             organization_id=sample_org_id,
             role="coordinator",
@@ -603,10 +647,9 @@ class TestApplicantRouter:
         
         semester_id = str(ObjectId())
         
-        # Mock services
+        # Create mock services
         mock_sem = Mock()
         mock_sem.get_semester.return_value = {"_id": semester_id}
-        mock_sem_service.return_value = mock_sem
         
         mock_app = Mock()
         mock_app.get_applicants.return_value = [
@@ -620,18 +663,26 @@ class TestApplicantRouter:
                 "survey_responses": {"major": "CS"}
             }
         ]
-        mock_app_service.return_value = mock_app
         
-        response = client.get(
-            f"/applicants?semester_id={semester_id}&role=mentor",
-            headers=auth_headers
-        )
+        # Override client dependencies
+        client.app.dependency_overrides[get_database] = lambda: mock_db
+        client.app.dependency_overrides[get_current_user] = lambda: mock_user
+        client.app.dependency_overrides[get_semester_service] = lambda: mock_sem
+        client.app.dependency_overrides[get_applicant_service] = lambda: mock_app
         
-        assert response.status_code == 200
-        data = response.json()
-        assert data["count"] == 1
-        assert data["applicants"][0]["role"] == "mentor"
-
+        try:
+            response = client.get(
+                f"/applicants?semester_id={semester_id}&role=mentor",
+                headers=auth_headers
+            )
+            
+            assert response.status_code == 200
+            data = response.json()
+            assert data["count"] == 1
+            assert data["applicants"][0]["role"] == "mentor"
+            
+        finally:
+            client.app.dependency_overrides = {}
 
 # ============================================================================
 # TEST: MatchingRouter
@@ -640,17 +691,13 @@ class TestApplicantRouter:
 class TestMatchingRouter:
     """Integration tests for matching_router"""
     
-    @patch('api.auth.get_current_user')
-    @patch('api.dependencies.get_matching_service')
-    @patch('api.dependencies.get_semester_service')
-    @patch('api.dependencies.get_organization_service')
-    @patch('api.dependencies.get_database')
-    def test_trigger_async_matching(self, mock_db, mock_org_service, mock_sem_service, 
-                                     mock_match_service, mock_get_user, client, auth_headers, sample_org_id):
+    def test_trigger_async_matching(self, client, mock_db, auth_headers, sample_org_id):
         """Test triggering async matching job"""
-        from api.auth import UserInDB
-        mock_get_user.return_value = UserInDB(
+
+        #. Define mock_user
+        mock_user = UserInDB(
             email="coordinator@test.com",
+            hashed_password="dummy_hash_for_test",
             full_name="Test Coordinator",
             organization_id=sample_org_id,
             role="coordinator",
@@ -662,48 +709,61 @@ class TestMatchingRouter:
         semester_id = str(ObjectId())
         job_id = "a3f7c8d9-1e2b-4a5c-9d7f-8e6b5a4c3d2e"
         
-        # Mock semester service
+        # Create Mock Services
+        # Mock Semester Service
         mock_sem = Mock()
         mock_sem.get_semester.return_value = {
             "_id": semester_id,
-            "status": "active"
+            "status": "active" # Must be active
         }
         mock_sem.update_semester_status.return_value = True
-        mock_sem_service.return_value = mock_sem
         
-        # Mock organization service
+        # Mock Organization Service
         mock_org = Mock()
-        mock_org.check_quota.return_value = True
-        mock_org_service.return_value = mock_org
+        mock_org.check_quota.return_value = True # Allow job creation
         
-        # Mock matching service
+        # Mock Matching Service
         mock_match = Mock()
         mock_match.create_matching_job.return_value = job_id
-        mock_match_service.return_value = mock_match
         
-        response = client.post(
-            "/matching/batch-async",
-            headers=auth_headers,
-            json={
-                "semester_id": semester_id,
-                "use_faiss": False,
-                "top_k": 10,
-                "save_results": True
-            }
-        )
+        # Mock Inference Engine (Required by endpoint signature)
+        mock_inference = Mock()
+
+        # Override client dependencies
+        client.app.dependency_overrides[get_database] = lambda: mock_db
+        client.app.dependency_overrides[get_current_user] = lambda: mock_user
+        client.app.dependency_overrides[get_semester_service] = lambda: mock_sem
+        client.app.dependency_overrides[get_organization_service] = lambda: mock_org
+        client.app.dependency_overrides[get_matching_service] = lambda: mock_match
+        client.app.dependency_overrides[get_inference_engine] = lambda: mock_inference
         
-        assert response.status_code == 202
-        data = response.json()
-        assert data["job_id"] == job_id
-        assert data["status"] == "pending"
+        try:
+            response = client.post(
+                "/matching/batch-async",
+                headers=auth_headers,
+                json={
+                    "semester_id": semester_id,
+                    "use_faiss": False,
+                    "top_k": 10,
+                    "save_results": True
+                }
+            )
+            
+            assert response.status_code == 202
+            data = response.json()
+            assert data["job_id"] == job_id
+            assert data["status"] == "pending"
+            
+        finally:
+            client.app.dependency_overrides = {}
     
-    @patch('api.auth.get_current_user')
-    @patch('api.dependencies.get_matching_service')
-    def test_get_job_status(self, mock_match_service, mock_get_user, client, auth_headers):
+    def test_get_job_status(self, client, mock_db, auth_headers):
         """Test getting job status"""
-        from api.auth import UserInDB
-        mock_get_user.return_value = UserInDB(
+        
+        # Define mock_user
+        mock_user = UserInDB(
             email="test@test.com",
+            hashed_password="dummy_hash_for_test",
             full_name="Test User",
             organization_id=str(ObjectId()),
             role="coordinator",
@@ -714,7 +774,7 @@ class TestMatchingRouter:
         
         job_id = "test-job-123"
         
-        # Mock service
+        # Create Mock Service
         mock_match = Mock()
         mock_match.get_job_status.return_value = {
             "job_id": job_id,
@@ -734,34 +794,39 @@ class TestMatchingRouter:
                 "average_compatibility": 0.847
             }
         }
-        mock_match_service.return_value = mock_match
         
-        response = client.get(f"/matching/jobs/{job_id}/status", headers=auth_headers)
+        # Override client dependencies
+        client.app.dependency_overrides[get_database] = lambda: mock_db
+        client.app.dependency_overrides[get_current_user] = lambda: mock_user
+        client.app.dependency_overrides[get_matching_service] = lambda: mock_match
         
-        assert response.status_code == 200
-        data = response.json()
-        assert data["job_id"] == job_id
-        assert data["status"] == "completed"
-        assert data["results"]["total_groups"] == 150
-
-
+        # Try/Finally block
+        try:
+            response = client.get(f"/matching/jobs/{job_id}/status", headers=auth_headers)
+            
+            assert response.status_code == 200
+            data = response.json()
+            assert data["job_id"] == job_id
+            assert data["status"] == "completed"
+            assert data["results"]["total_groups"] == 150
+            
+        finally:
+            client.app.dependency_overrides = {}
 # ============================================================================
 # TEST: FeedbackRouter
 # ============================================================================
 
+
 class TestFeedbackRouter:
     """Integration tests for feedback_router"""
     
-    @patch('api.auth.get_current_user')
-    @patch('api.dependencies.get_feedback_service')
-    @patch('api.dependencies.get_semester_service')
-    @patch('api.dependencies.get_database')
-    def test_submit_feedback(self, mock_db, mock_sem_service, mock_feedback_service, 
-                             mock_get_user, client, auth_headers, sample_org_id):
+    def test_submit_feedback(self, client, mock_db, auth_headers, sample_org_id):
         """Test submitting feedback"""
-        from api.auth import UserInDB
-        mock_get_user.return_value = UserInDB(
+
+        # 1. Define mock_user (acting as a Mentor here)
+        mock_user = UserInDB(
             email="mentor@ufl.edu",
+            hashed_password="dummy_hash_for_test",
             full_name="Test Mentor",
             organization_id=sample_org_id,
             role="coordinator",
@@ -773,52 +838,60 @@ class TestFeedbackRouter:
         match_id = str(ObjectId())
         semester_id = str(ObjectId())
         
-        # Mock semester service
+        
+        # Mock Semester Service
         mock_sem = Mock()
         mock_sem.get_semester.return_value = {"_id": semester_id}
-        mock_sem_service.return_value = mock_sem
         
-        # Mock database - match exists and user is mentor
-        mock_db_inst = Mock()
-        mock_db_inst.match_groups.find_one.return_value = {
+        # Mock Database (Required to verify match ownership)
+        # The router calls db.match_groups.find_one(...)
+        mock_db_instance = Mock()
+        mock_db_instance.match_groups.find_one.return_value = {
             "_id": ObjectId(match_id),
             "mentor": {"email": "mentor@ufl.edu"},
             "mentees": [{"email": "mentee1@ufl.edu"}, {"email": "mentee2@ufl.edu"}]
         }
-        mock_db.return_value = mock_db_inst
         
-        # Mock feedback service
+        # Mock Feedback Service
         mock_feedback = Mock()
         feedback_id = str(ObjectId())
         mock_feedback.submit_feedback.return_value = feedback_id
-        mock_feedback_service.return_value = mock_feedback
         
-        response = client.post(
-            "/feedback",
-            headers=auth_headers,
-            json={
-                "match_id": match_id,
-                "semester_id": semester_id,
-                "rating": 5,
-                "comment": "Great mentees!",
-                "tags": ["good_communication", "shared_interests"]
-            }
-        )
+        # 3. Override client dependencies
+        client.app.dependency_overrides[get_database] = lambda: mock_db_instance
+        client.app.dependency_overrides[get_current_user] = lambda: mock_user
+        client.app.dependency_overrides[get_semester_service] = lambda: mock_sem
+        client.app.dependency_overrides[get_feedback_service] = lambda: mock_feedback
         
-        assert response.status_code == 201
-        data = response.json()
-        assert data["rating"] == 5
-        assert data["role"] == "mentor"
+        # 4. Try/Finally block
+        try:
+            response = client.post(
+                "/feedback/", 
+                headers=auth_headers,
+                json={
+                    "match_id": match_id,
+                    "semester_id": semester_id,
+                    "rating": 5,
+                    "comment": "Great mentees!",
+                    "tags": ["good_communication", "shared_interests"]
+                }
+            )
+            
+            assert response.status_code == 201
+            data = response.json()
+            assert data["rating"] == 5
+            assert data["role"] == "mentor"
+            
+        finally:
+            client.app.dependency_overrides = {}
     
-    @patch('api.auth.get_current_user')
-    @patch('api.dependencies.get_feedback_service')
-    @patch('api.dependencies.get_semester_service')
-    def test_get_feedback_summary(self, mock_sem_service, mock_feedback_service, 
-                                   mock_get_user, client, auth_headers, sample_org_id):
+    def test_get_feedback_summary(self, client, mock_db, auth_headers, sample_org_id):
         """Test getting feedback summary"""
-        from api.auth import UserInDB
-        mock_get_user.return_value = UserInDB(
+
+        # 1. Define mock_user
+        mock_user = UserInDB(
             email="test@test.com",
+            hashed_password="dummy_hash_for_test",
             full_name="Test User",
             organization_id=sample_org_id,
             role="coordinator",
@@ -829,10 +902,9 @@ class TestFeedbackRouter:
         
         semester_id = str(ObjectId())
         
-        # Mock services
+        # 2. Create Mock Services
         mock_sem = Mock()
         mock_sem.get_semester.return_value = {"_id": semester_id}
-        mock_sem_service.return_value = mock_sem
         
         mock_feedback = Mock()
         mock_feedback.get_semester_feedback_summary.return_value = {
@@ -855,19 +927,27 @@ class TestFeedbackRouter:
                 {"tag": "shared_interests", "count": 72}
             ]
         }
-        mock_feedback_service.return_value = mock_feedback
         
-        response = client.get(
-            f"/feedback/semester/{semester_id}/summary",
-            headers=auth_headers
-        )
+        # 3. Override client dependencies
+        client.app.dependency_overrides[get_database] = lambda: mock_db
+        client.app.dependency_overrides[get_current_user] = lambda: mock_user
+        client.app.dependency_overrides[get_semester_service] = lambda: mock_sem
+        client.app.dependency_overrides[get_feedback_service] = lambda: mock_feedback
         
-        assert response.status_code == 200
-        data = response.json()
-        assert data["total_feedback"] == 280
-        assert data["average_rating"] == 4.3
-
-
+        # 4. Try/Finally block
+        try:
+            response = client.get(
+                f"/feedback/semester/{semester_id}/summary",
+                headers=auth_headers
+            )
+            
+            assert response.status_code == 200
+            data = response.json()
+            assert data["total_feedback"] == 280
+            assert data["average_rating"] == 4.3
+            
+        finally:
+            client.app.dependency_overrides = {}
 # ============================================================================
 # INTEGRATION WORKFLOW TESTS
 # ============================================================================
@@ -879,8 +959,7 @@ class TestFullWorkflow:
     @patch('api.dependencies.get_database')
     def test_complete_matching_workflow(self, mock_db, mock_get_user, client, auth_headers, sample_org_id):
         """Test complete workflow: register → create org → semester → upload → match → feedback"""
-        from api.auth import UserInDB
-        
+                
         # Setup mock user
         mock_get_user.return_value = UserInDB(
             email="coordinator@vso-ufl.edu",

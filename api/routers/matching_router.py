@@ -23,7 +23,9 @@ from api.dependencies import (
     MatchingServiceDep, 
     SemesterServiceDep, 
     InferenceEngineDep,
-    DatabaseDep
+    DatabaseDep,
+    OrganizationServiceDep,
+    get_organization_service
 )
 from api.services.matching_service import JobStatus
 from database.adapter import DataAdapter
@@ -197,6 +199,7 @@ async def trigger_async_matching(
     matching_service: MatchingServiceDep,
     semester_service: SemesterServiceDep,
     inference_engine: InferenceEngineDep,
+    org_service: OrganizationServiceDep,
     db: DatabaseDep,
     user: UserInDB = Depends(get_current_user)
 ):
@@ -227,10 +230,7 @@ async def trigger_async_matching(
             detail=f"Cannot run matching on semester in '{semester['status']}' status. Must be 'active'."
         )
     
-    # Check organization quota for concurrent jobs
-    from api.dependencies import get_organization_service
-    org_service = get_organization_service(db)
-    
+    # Check organization quota for concurrent jobs    
     if not org_service.check_quota(user.organization_id, "matching_jobs", 1):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
