@@ -17,7 +17,7 @@ Run with:
 
 import pytest
 from fastapi.testclient import TestClient
-from datetime import datetime, timezone, timedelta
+import datetime
 from unittest.mock import Mock, patch, MagicMock
 from bson import ObjectId
 from io import BytesIO
@@ -90,7 +90,7 @@ def sample_user_data(sample_org_id):
         "full_name": "Test Coordinator",
         "hashed_password": "$2b$12$KIX.7JhCkY8d.8vK9XqZNe5L0iJx0y4JmVZH0x8k9E0JqZvG4WvQS",  # "testpass123"
         "organization_id": ObjectId(sample_org_id),
-        "role": "admin",
+        "role": "coordinator",
         "is_active": True,
         "permissions": {
             "can_upload_applicants": True,
@@ -99,10 +99,10 @@ def sample_user_data(sample_org_id):
             "can_manage_users": False,
             "can_create_semester": True
         },
-        "created_at": datetime.now(timezone.utc),
-        "updated_at": datetime.now(timezone.utc)
-    }
+        "created_at": datetime.datetime.now(datetime.timezone.utc),
+        "updated_at": datetime.datetime.now(datetime.timezone.utc)
 
+    }
 
 @pytest.fixture
 def sample_jwt_token():
@@ -258,10 +258,25 @@ class TestAuthRouter:
             client.app.dependency_overrides = {}
 
     @patch('api.auth.get_current_user')
-    def test_get_current_user(self, mock_get_user, mock_db, client, auth_headers, sample_user_data):
+    @patch('api.auth.SECRET_KEY', 'a_very_secure_test_secret_key')
+    def test_get_current_user(self, mock_get_user, mock_db, client, auth_headers, sample_user_data, sample_org_id):
         """Test get current user info"""
         # Mock current user
+        
+        mock_user = UserInDB(
+                email=sample_user_data["email"],
+                full_name=sample_user_data["full_name"],
+                organization_id=str(sample_user_data["organization_id"]),
+                hashed_password="dummy_hash_for_test",
+                role=sample_user_data["role"],
+                is_active=sample_user_data["is_active"],
+                permissions=sample_user_data["permissions"],
+                created_at=sample_user_data["created_at"]
+            )
+
         client.app.dependency_overrides[get_database] = lambda: mock_db
+        client.app.dependency_overrides[get_current_user] = lambda: mock_user
+
         try:
             mock_get_user.return_value = UserInDB(
                 email=sample_user_data["email"],
@@ -286,12 +301,6 @@ class TestAuthRouter:
 # ============================================================================
 # TEST: OrganizationRouter
 # ============================================================================
-
-from unittest.mock import Mock, patch
-from datetime import datetime, timezone
-from bson import ObjectId
-from api.auth import UserInDB
-from api.dependencies import get_database
 
 class TestOrganizationRouter:
     """Integration tests for organization_router"""
@@ -324,8 +333,8 @@ class TestOrganizationRouter:
             "plan": "free",
             "owner_email": "owner@test.com",
             "is_active": True,
-            "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc)
+            "created_at": datetime.datetime.now(datetime.timezone.utc),
+            "updated_at": datetime.datetime.now(datetime.timezone.utc)
         }
 
         # Apply Overrides
@@ -423,7 +432,7 @@ class TestSemesterRouter:
             role="coordinator",
             is_active=True,
             permissions={"can_create_semester": True},
-            created_at=datetime.now(timezone.utc)
+            created_at=datetime.datetime.now(datetime.timezone.utc)
         )
         
         mock_service = Mock()
@@ -433,7 +442,7 @@ class TestSemesterRouter:
             "_id": semester_id,
             "name": "Fall 2024",
             "status": "draft",
-            "created_at": datetime.now(timezone.utc)
+            "created_at": datetime.datetime.now(datetime.timezone.utc)
         }
         
         # Override client dependencies
@@ -475,7 +484,7 @@ class TestSemesterRouter:
             role="coordinator",
             is_active=True,
             permissions={},
-            created_at=datetime.now(timezone.utc)
+            created_at=datetime.datetime.now(datetime.timezone.utc)
         )
         
         # Create mock service
@@ -524,7 +533,7 @@ class TestSemesterRouter:
             role="coordinator",
             is_active=True,
             permissions={},
-            created_at=datetime.now(timezone.utc)
+            created_at=datetime.datetime.now(datetime.timezone.utc)
         )
         
         semester_id = str(ObjectId())
@@ -580,7 +589,7 @@ class TestApplicantRouter:
             role="coordinator",
             is_active=True,
             permissions={"can_upload_applicants": True},
-            created_at=datetime.now(timezone.utc)
+            created_at=datetime.datetime.now(datetime.timezone.utc)
         )
         
         semester_id = str(ObjectId())
@@ -642,7 +651,7 @@ class TestApplicantRouter:
             role="coordinator",
             is_active=True,
             permissions={},
-            created_at=datetime.now(timezone.utc)
+            created_at=datetime.datetime.now(datetime.timezone.utc)
         )
         
         semester_id = str(ObjectId())
@@ -659,7 +668,7 @@ class TestApplicantRouter:
                 "full_name": "Test Mentor",
                 "role": "mentor",
                 "status": "pending",
-                "submitted_at": datetime.now(timezone.utc),
+                "submitted_at":datetime.datetime.now(datetime.timezone.utc),
                 "survey_responses": {"major": "CS"}
             }
         ]
@@ -703,7 +712,7 @@ class TestMatchingRouter:
             role="coordinator",
             is_active=True,
             permissions={"can_trigger_matching": True},
-            created_at=datetime.now(timezone.utc)
+            created_at=datetime.datetime.now(datetime.timezone.utc)
         )
         
         semester_id = str(ObjectId())
@@ -769,7 +778,7 @@ class TestMatchingRouter:
             role="coordinator",
             is_active=True,
             permissions={},
-            created_at=datetime.now(timezone.utc)
+            created_at=datetime.datetime.now(datetime.timezone.utc)
         )
         
         job_id = "test-job-123"
@@ -784,9 +793,9 @@ class TestMatchingRouter:
                 "completed_steps": 5,
                 "total_steps": 5
             },
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "started_at": datetime.now(timezone.utc).isoformat(),
-            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "started_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "completed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "elapsed_seconds": 125.4,
             "error_message": None,
             "results": {
@@ -832,7 +841,7 @@ class TestFeedbackRouter:
             role="coordinator",
             is_active=True,
             permissions={},
-            created_at=datetime.now(timezone.utc)
+            created_at=datetime.datetime.now(datetime.timezone.utc)
         )
         
         match_id = str(ObjectId())
@@ -897,7 +906,7 @@ class TestFeedbackRouter:
             role="coordinator",
             is_active=True,
             permissions={},
-            created_at=datetime.now(timezone.utc)
+            created_at=datetime.datetime.now(datetime.timezone.utc)
         )
         
         semester_id = str(ObjectId())
@@ -959,11 +968,12 @@ class TestFullWorkflow:
     @patch('api.dependencies.get_database')
     def test_complete_matching_workflow(self, mock_db, mock_get_user, client, auth_headers, sample_org_id):
         """Test complete workflow: register → create org → semester → upload → match → feedback"""
-                
+
         # Setup mock user
         mock_get_user.return_value = UserInDB(
             email="coordinator@vso-ufl.edu",
             full_name="Test Coordinator",
+            hashed_password = "$2b$12$KIX.7JhCkY8d.8vK9XqZNe5L0iJx0y4JmVZH0x8k9E0JqZvG4WvQS",  
             organization_id=sample_org_id,
             role="coordinator",
             is_active=True,
@@ -972,7 +982,7 @@ class TestFullWorkflow:
                 "can_trigger_matching": True,
                 "can_create_semester": True
             },
-            created_at=datetime.now(timezone.utc)
+            created_at=datetime.datetime.now(datetime.timezone.utc)
         )
         
         # This would test the full workflow with proper mocking
@@ -1004,7 +1014,6 @@ class TestErrorHandling:
     @patch('api.auth.get_current_user')
     def test_invalid_semester_id(self, mock_get_user, client, auth_headers):
         """Test accessing non-existent semester"""
-        from api.auth import UserInDB
         mock_get_user.return_value = UserInDB(
             email="test@test.com",
             full_name="Test User",
@@ -1012,7 +1021,7 @@ class TestErrorHandling:
             role="coordinator",
             is_active=True,
             permissions={},
-            created_at=datetime.now(timezone.utc)
+            created_at=datetime.datetime.now(datetime.timezone.utc)
         )
         
         # This would fail with proper mocking to return 404

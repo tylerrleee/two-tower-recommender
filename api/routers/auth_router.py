@@ -19,7 +19,7 @@ from fastapi import APIRouter, HTTPException, status, Depends
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field, EmailStr
 from typing import Optional
-from datetime import datetime, timedelta, timezone
+import datetime
 import logging
 
 from api.auth import (
@@ -226,8 +226,8 @@ async def register_user(
         "role": request.role,
         "is_active": True,
         "permissions": permissions[request.role],
-        "created_at": datetime.now(timezone.utc),
-        "updated_at": datetime.now(timezone.utc)
+        "created_at": datetime.datetime.now(datetime.timezone.utc),
+        "updated_at": datetime.datetime.now(datetime.timezone.utc)
     }
     
     result = db.users.insert_one(user_doc)
@@ -337,7 +337,7 @@ async def change_password(
         {
             "$set": {
                 "hashed_password": new_hashed_password,
-                "updated_at": datetime.now(timezone.utc)
+                "updated_at": datetime.datetime.now(datetime.timezone.utc)
             }
         }
     )

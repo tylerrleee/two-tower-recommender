@@ -40,6 +40,7 @@ class UserInDB(BaseModel):
     role            : str
     is_active       : bool
     permissions     : dict
+    created_at      : Optional[datetime.datetime] = None
 
 # CORE FUNCTIONS
 
