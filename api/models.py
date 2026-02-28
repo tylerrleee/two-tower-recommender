@@ -8,11 +8,11 @@ from typing import List, Literal, Optional
 from enum import Enum
 
 class YearLevel(str, Enum):
-    FRESHMAN = "Freshman"
-    SOPHOMORE = "Sophomore"
-    JUNIOR = "Junior"
-    SENIOR = "Senior"
-    GRADUATE = "Graduate"
+    FRESHMAN    = "Freshman"
+    SOPHOMORE   = "Sophomore"
+    JUNIOR      = "Junior"
+    SENIOR      = "Senior"
+    GRADUATE    = "Graduate"
 
 class Role(int, Enum):
     MENTOR = 0
@@ -77,21 +77,21 @@ class BatchMatchingRequest(BaseModel):
 
 class CSVUploadRequest(BaseModel):
     """Request for CSV file upload matching"""
-    csv_content: str = Field(..., description="Base64 encoded CSV file content")
-    use_faiss: bool = False
-    top_k: int = 10
+    csv_content: str    = Field(..., description="Base64 encoded CSV file content")
+    use_faiss: bool     = False
+    top_k: int          = 10
 
 class MentorInfo(BaseModel):
     """Mentor information in response"""
-    name: str
+    name : str
     major: str
     email: EmailStr
 
 class MenteeInfo(BaseModel):
     """Mentee information in response"""
-    name: str
+    name : str
     major: str
-    year: YearLevel
+    year : YearLevel
 
 class MatchGroup(BaseModel):
     """Single mentor-mentee group match"""
@@ -136,13 +136,13 @@ class MatchingResponse(BaseModel):
 
 class HealthCheckResponse(BaseModel):
     """Health check response"""
-    status: Literal["healthy", "unhealthy"]
+    status      : Literal["healthy", "unhealthy"]
     model_loaded: bool
-    version: str
-    timestamp: str
+    version     : str
+    timestamp   : str
 
 class ErrorResponse(BaseModel):
     """Error response schema"""
-    error: str
-    detail: Optional[str] = None
-    timestamp: str
+    error       : str
+    detail      : Optional[str] = None
+    timestamp   : str

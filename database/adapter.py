@@ -1,5 +1,9 @@
 """
 Adapter to fetch training data from MongoDB and transform for feature engineering format (/src)
+- flatten nested document to dictionary structure
+- cache BERT embeddings
+- provide storage for embeddings
+- Pandas conversion (TODO polar)
 """
 
 from typing import Tuple, Optional, Dict, List

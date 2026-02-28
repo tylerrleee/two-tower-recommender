@@ -4,12 +4,17 @@ import pandas as pd
 from typing import List, Dict, Optional
 import logging
 from pathlib import Path
+from functools import lru_cache
+import hashlib
+import datetime
+import re
 
 from src.features import FeatureEngineer
 from src.embedding import EmbeddingEngineer
 from src.model import TwoTowerModel
 from src.matcher import GroupMatcher
 import config
+
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +48,7 @@ class MatchingInference:
         self.matcher            : Optional[GroupMatcher]        = None
 
         self.model_metadata     : Optional[GroupMatcher]        = None
-
+        self._preprocessing_cache                                = {}
 
     def load_model(self) -> None:
         """ Load trained model from checkpoint
@@ -123,15 +128,54 @@ class MatchingInference:
                 diversity_weight     = 0.4
             )
 
+            self.model_metadata.update({
+            'model_path': str(self.model_path),
+            'loaded_at': datetime.datetime.now(datetime.UTC).isoformat(),
+            'version': self._infer_model_version()
+        })
+            
             logger.info("Model loaded done.")
 
         except Exception as e:
             logger.error(f"Failed to load model: {e}")
             raise
     
+    def _infer_model_version(self) -> str:
+        """Extract model version from checkpoint"""
+        # Check if model path contains version
+        # e.g., "models/best_model_v2.1.0.pt"
+
+        match = re.search(r'v(\d+\.\d+\.\d+)', str(self.model_path))
+        if match:
+            return match.group(1)
+        
+        # Fallback: Use training date
+        return f"1.0.{self.model_metadata.get('epoch', 0)}"
+
+    def _compute_df_hash(self, df: pd.DataFrame) -> str:
+        """ Generate hash of DataFrame for cache key"""
+        # Calculate hash values for dataframe | each hashed int is a series/df_row
+        hashed_binary_of_df = pd.util.hash_pandas_object(df, index = True)
+
+        # condense binary -- reduce size
+        condensed_binary = hashlib.md5(hashed_binary_of_df.values) # return binary
+
+        # Convert binary into hexadecimal string (e.g. "5d41402abc4b2a76b9719d911017c592")
+        hex_string_representation = condensed_binary.hexdigest()
+        return hex_string_representation
+    
+
     def preprocess_data(self, df: pd.DataFrame) -> Dict[str, np.ndarray]:
         """ Preprocess applicant data into embeddings """
         try:
+            
+            # check cache
+            df_hash = self._compute_df_hash(df)
+
+            if df_hash in self._preprocessing_cache:
+                logger.info("Using cache preprocessing result")
+                return self._preprocessing_cache[df_hash]
+
             self.feature_engineer.fit(df = df,
                                       rename_map = config.RENAME_MAP)
             df_mentors = df[df['role'] == 0].copy()
@@ -149,13 +193,19 @@ class MatchingInference:
                 text_features = mentee_data['profile_text'],
                 meta_features = mentee_data['meta_features']
             )
-            return {
+            result =  {
                 'mentor_embeddings' : mentor_emb,
                 'mentee_embeddings' : mentee_emb,
                 'df_mentors'        : df_mentors,
                 'df_mentees'        : df_mentees
             }
             
+            # Cache Result
+            if len(self._preprocessing_cache) > 10: # 10 is placeholder for now TODO
+                self._preprocessing_cache.clear()  
+        
+            self._preprocessing_cache[df_hash] = result
+            return result
         except Exception as e:
             logger.error(f"Preprocessing failed: {(e)}")
             raise

@@ -1,3 +1,0 @@
-ignores/*
-end-to-end/commands.txt
-src/api_keys.py
